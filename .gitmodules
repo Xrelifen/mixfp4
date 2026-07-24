@@ -1,0 +1,6 @@
+[submodule "3rdparty/cutlass"]
+	path = 3rdparty/cutlass
+	url = git@github.com:NVIDIA/cutlass.git
+[submodule "3rdparty/sm120-e0m3-mma"]
+	path = 3rdparty/sm120-e0m3-mma
+	url = git@github.com:revollllt/sm120-e0m3-mma.git
