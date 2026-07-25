@@ -71,6 +71,53 @@
 namespace cutlass::gemm::collective {
 using namespace cute;
 
+// How many MMA atoms share one format flag, i.e. the size of a format granule in atoms. The atom
+// is m16n8k64, so a granule is (kMixedAAtomsPerGranule * 16) rows of A by
+// (kMixedBAtomsPerGranule * 8) columns of B, over one k_tile of K.
+//
+// The defaults give a symmetric 32-row x 32-column granule. A=2/B=4 is the cheap symmetric point;
+// A=1/B=2 gives the finest granule the hardware permits (16x16, since the atom's M is 16) at the
+// cost of 64 specialized arms instead of 8. See the table in mma_sm120_mixed.hpp.
+#ifndef MIXFP4_A_ATOMS_PER_GRANULE
+#define MIXFP4_A_ATOMS_PER_GRANULE 2
+#endif
+#ifndef MIXFP4_B_ATOMS_PER_GRANULE
+#define MIXFP4_B_ATOMS_PER_GRANULE 4
+#endif
+
+namespace mixfp4_detail {
+
+// Compile-time dispatch on a runtime pattern index, as a balanced binary search so the cost is
+// log2(arms) compares rather than a linear chain. A plain `switch` would be nicer but nvcc turns
+// dense switches back into branch trees here anyway, and a linear if-chain over 64 arms is not
+// acceptable. Each leaf is a whole specialized k_tile body -- far too large, and containing
+// barriers, so ptxas leaves these as real branches rather than if-converting them.
+template <int Lo, int Hi, class Body>
+CUTLASS_DEVICE void
+dispatch_pattern(uint32_t pattern, Body&& body) {
+  if constexpr (Lo == Hi) {
+    body(cute::C<Lo>{});
+  }
+  else {
+    constexpr int Mid = Lo + (Hi - Lo) / 2;
+    if (pattern <= uint32_t(Mid)) { dispatch_pattern<Lo, Mid>(pattern, body); }
+    else                          { dispatch_pattern<Mid + 1, Hi>(pattern, body); }
+  }
+}
+
+// Pattern bit layout: A granule flags occupy bits [0, AGranules), B granule flags follow in
+// bits [AGranules, AGranules + BGranules).
+template <int AGranules, int AAtomsPerGranule>
+CUTLASS_DEVICE constexpr uint32_t a_flag_of_atom(uint32_t pattern, int m_atom) {
+  return (pattern >> (m_atom / AAtomsPerGranule)) & 1u;
+}
+template <int AGranules, int BAtomsPerGranule>
+CUTLASS_DEVICE constexpr uint32_t b_flag_of_atom(uint32_t pattern, int n_atom) {
+  return (pattern >> (AGranules + n_atom / BAtomsPerGranule)) & 1u;
+}
+
+} // namespace mixfp4_detail
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <
@@ -903,21 +950,63 @@ struct CollectiveMma<
     //     lanes, exactly as SFALayout's ((2,2,8),64):((8,0,1),16) thread->row mapping predicts.
     using cute::SM120::BLOCKSCALED::SM120_16x8x64_TN_VS_MixedSite;
 
-    auto gemm_kblock = [&](auto site_c, auto k_block) {
-      // (V,M) x (V,N) => (V,M,N)
-      cute::gemm(MMA_Atom<SM120_16x8x64_TN_VS_MixedSite<decltype(site_c)::value>>{},
-                 make_zip_tensor(tCrA(_,_,k_block), tCrSFA(_,_,k_block)),
-                 make_zip_tensor(tCrB(_,_,k_block), tCrSFB(_,_,k_block)),
-                 accum);
+    // Atom counts this warp covers, and how they divide into independently-flagged granules.
+    constexpr int kMmaM     = decltype(size<1>(tCrA))::value;                 // 2 for the default tile
+    constexpr int kMmaN     = decltype(size<1>(tCrB))::value;                 // 8 for the default tile
+    constexpr int kAAtoms   = MIXFP4_A_ATOMS_PER_GRANULE;
+    constexpr int kBAtoms   = MIXFP4_B_ATOMS_PER_GRANULE;
+    static_assert(kMmaM % kAAtoms == 0, "A granule must divide the warp's M atom count");
+    static_assert(kMmaN % kBAtoms == 0, "B granule must divide the warp's N atom count");
+    constexpr int kAGran    = kMmaM / kAAtoms;
+    constexpr int kBGran    = kMmaN / kBAtoms;
+    constexpr int kNumArms  = 1 << (kAGran + kBGran);
+
+    // One k_block's worth of MMAs, with every atom's format fixed at compile time by `pattern`.
+    //
+    // This open-codes cute::gemm's dispatch [4] rather than calling it, because a single
+    // cute::gemm applies one atom to all of its MMAs and the whole point here is to vary the
+    // atom per sub-block. The traversal is deliberately identical to CuTe's row-major serpentine
+    // (cute/algorithm/gemm.hpp), which exists to maximise operand register reuse between
+    // consecutive MMAs -- reproducing it keeps the .reuse flags ptxas emits unchanged.
+    auto gemm_kblock = [&](auto pattern_c, auto k_block) {
+      constexpr uint32_t kPattern = decltype(pattern_c)::value;
+      auto zipA = make_zip_tensor(tCrA(_,_,k_block), tCrSFA(_,_,k_block));
+      auto zipB = make_zip_tensor(tCrB(_,_,k_block), tCrSFB(_,_,k_block));
+
+      for_each(make_int_sequence<kMmaM>{}, [&](auto mi) {
+        for_each(make_int_sequence<kMmaN>{}, [&](auto ni) {
+          constexpr int m  = decltype(mi)::value;
+          constexpr int n  = decltype(ni)::value;
+          constexpr int ns = (m & 1) ? (kMmaN - 1 - n) : n;   // serpentine coordinate
+          constexpr int site =
+              int(mixfp4_detail::a_flag_of_atom<kAGran, kAAtoms>(kPattern, m)) |
+              (int(mixfp4_detail::b_flag_of_atom<kAGran, kBAtoms>(kPattern, ns)) << 1);
+          cute::gemm(MMA_Atom<SM120_16x8x64_TN_VS_MixedSite<site>>{},
+                     accum(_,m,ns), zipA(_,m), zipB(_,ns), accum(_,m,ns));
+        });
+      });
     };
 
     // Bit 7 of scale-factor byte 0 of each operand, for the k_block already resident in
     // registers. Every lane of a warp already holds the right value for the whole granule by
     // construction, so no shuffle/broadcast is needed.
     auto read_site = [&](auto k_block) {
-      uint32_t const flag_a = recast<uint32_t>(tCrSFA(_,_,k_block))(_0{}) & MIXFP4_FLAG_MASK;
-      uint32_t const flag_b = recast<uint32_t>(tCrSFB(_,_,k_block))(_0{}) & MIXFP4_FLAG_MASK;
-      uint32_t const site = (flag_a != 0 ? 1u : 0u) | (flag_b != 0 ? 2u : 0u);
+      auto sfa_words = recast<uint32_t>(tCrSFA(_,_,k_block));   // (1, MMA_M)
+      auto sfb_words = recast<uint32_t>(tCrSFB(_,_,k_block));   // (1, MMA_N)
+
+      // One bit per granule, read from that granule's first atom.
+      uint32_t pattern = 0;
+      for_each(make_int_sequence<kAGran>{}, [&](auto gi) {
+        constexpr int g = decltype(gi)::value;
+        if ((sfa_words(_0{}, C<g * kAAtoms>{}) & MIXFP4_FLAG_MASK) != 0) { pattern |= 1u << g; }
+      });
+      for_each(make_int_sequence<kBGran>{}, [&](auto gi) {
+        constexpr int g = decltype(gi)::value;
+        if ((sfb_words(_0{}, C<g * kBAtoms>{}) & MIXFP4_FLAG_MASK) != 0) {
+          pattern |= 1u << (kAGran + g);
+        }
+      });
+      uint32_t const site = pattern;
 
       // Tagging finer than the granule above makes lanes of one warp disagree here, which sends
       // them down different arms and leaves mma.sync.aligned running partially converged -- that
@@ -995,12 +1084,7 @@ struct CollectiveMma<
       (void) &read_site;
       body(C<0>{});
 #else
-      switch (read_site(_0{})) {
-        case 0:  body(C<0>{}); break;
-        case 1:  body(C<1>{}); break;
-        case 2:  body(C<2>{}); break;
-        default: body(C<3>{}); break;
-      }
+      mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(read_site(_0{}), body);
 #endif
     };
 

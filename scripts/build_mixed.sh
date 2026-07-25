@@ -25,7 +25,7 @@ mkdir -p "$(dirname "$OUT")"
   -DCUTLASS_ENABLE_TENSOR_CORE_MMA=1 -DCUTLASS_ENABLE_GDC_FOR_SM100=1 \
   --expt-relaxed-constexpr -ftemplate-backtrace-limit=0 \
   -DCUTLASS_DEBUG_TRACE_LEVEL=0 -DCUTLASS_SM100_FAMILY_ARCHS_ENABLED \
-  -Xcompiler=-fno-strict-aliasing \
+  -Xcompiler=-fno-strict-aliasing -Xcompiler=-fopenmp \
   -I"$WT/3rdparty/cutlass/examples/common" \
   -I"$WT/src" \
   -I"$WT/3rdparty/cutlass/include" \
@@ -33,5 +33,5 @@ mkdir -p "$(dirname "$OUT")"
   -I"$WT/3rdparty/cutlass/tools/util/include" \
   -isystem /usr/local/cuda-13.1/include \
   "$WT/src/mixed_nvfp4_gemm.cu" -o "$OUT" \
-  -lcudadevrt -lcudart_static -lrt -lpthread -ldl
+  -lcudadevrt -lcudart_static -lrt -lpthread -ldl -lgomp
 echo "built $OUT"

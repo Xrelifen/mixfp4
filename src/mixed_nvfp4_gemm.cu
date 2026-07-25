@@ -1,23 +1,35 @@
-// Stage 1a of the mixed E0M3/E2M1 block-scaled GEMM effort (see
-// /home/brian/.claude/plans/mutable-soaring-pascal.md). This file is currently a parity check,
-// not yet a mixed-format kernel: it is byte-for-byte src/nvfp4_gemm.cu's problem setup, except
-// the mainloop is built through our forked src/collective/sm120_blockscaled_mma_tma_mixed.hpp
-// (via a substituted DispatchPolicy tag) instead of CUTLASS's vendored mainloop, with ZERO
-// functional changes in the fork itself. The goal is to prove the fork-and-substitute mechanism
-// produces identical results to the unforked src/nvfp4_gemm.cu before Stage 1b adds the actual
-// mixed-dispatch logic inside the forked mainloop's gemm_kblock/copy_kblock.
+// Mixed E0M3/E2M1 block-scaled NVFP4 GEMM on SM120 (see
+// /home/brian/.claude/plans/mutable-soaring-pascal.md for the full effort).
+//
+// Same problem setup as src/nvfp4_gemm.cu, but the mainloop is built through our forked
+// src/collective/sm120_blockscaled_mma_tma_mixed.hpp (via a substituted DispatchPolicy tag), which
+// selects per-granule between E2M1 and E0M3 decoding of each operand. The format flag rides in
+// bit 7 of the UE4M3 scale bytes -- architecturally ignored by the tensor core, so it costs no
+// extra storage or bandwidth.
+//
+// PTX cannot spell E0M3, so this binary must be run through scripts/patch_mixed_nvfp4_gemm.py
+// before the E0M3 sites do anything: unpatched, all four dispatch sites are plain E2M1 x E2M1 and
+// the kernel simply computes ordinary NVFP4.
 //
 // How CollectiveMainloop is assembled: rather than hand-deriving TiledMma/SmemLayoutAtoms/etc.
 // (which involves intricate swizzle and stage-count arithmetic -- see
 // cutlass/gemm/collective/builders/sm120_blockscaled_mma_builder.inl), we instantiate the
 // *standard* CollectiveBuilder (StdMainloopBuilder below) to get all of that derivation for
 // free -- its "using X = ..." lines are public member typedefs, not just internal plumbing, so
-// they're directly readable as StdMainloopBuilder::X. We only substitute the one thing that
-// actually needs to differ: the DispatchPolicy tag, which is what selects which CollectiveMma
-// partial specialization (ours vs. CUTLASS's) gets used.
+// they're directly readable as StdMainloopBuilder::X. We only substitute the two things that
+// actually need to differ: the DispatchPolicy tag (which selects our CollectiveMma partial
+// specialization) and the MMA atom.
 
+#include <algorithm>
+#include <map>
+#include <set>
+#include <utility>
+#include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#include <string>
+#include <vector>
 
 #include "cute/tensor.hpp"
 
@@ -162,6 +174,151 @@ void initialize_block(cutlass::TensorView<Element, Layout> view, uint64_t seed) 
   cutlass::reference::host::TensorFillRandomUniform(view, seed, scope_max, scope_min, 0);
 }
 
+// ------------------------------------------------------------------------------------------
+// Mixed-format host reference
+// ------------------------------------------------------------------------------------------
+// CUTLASS's own block-scaled reference (Gemm3x + GettBlockScalingMainloopParams) decodes every
+// operand as E2M1 and treats the whole scale byte as a UE4M3 magnitude. Neither holds here: bit
+// 7 of the scale byte is our format tag (the tensor core ignores it -- verified on hardware in
+// tests/mma_intrinsics), and a tagged granule is decoded by the tensor core under the E0M3
+// codebook instead. So correctness needs its own reference.
+//
+// E2M1 and E0M3 index the *same* 4-bit nibble, just through different codebooks:
+//   E2M1 magnitudes: 0, 0.5, 1, 1.5, 2, 3, 4, 6      (plus a sign bit)
+//   E0M3 magnitudes: 0, 1,   2, 3,   4, 5, 6, 7      (plus a sign bit -- equal-spaced signed
+//                                                     integers, i.e. sign-magnitude INT4)
+// confirmed on this hardware in 3rdparty/sm120-e0m3-mma/RESULTS.md. Recovering the nibble index
+// from an E2M1-decoded value and re-reading it under the E0M3 codebook therefore reproduces
+// exactly what a patched E0M3 instruction computes, without needing raw sub-byte access.
+static constexpr float kE2m1Magnitudes[8] = {0.f, 0.5f, 1.f, 1.5f, 2.f, 3.f, 4.f, 6.f};
+
+static float reinterpret_e2m1_as_e0m3(float v) {
+  float const mag = std::fabs(v);
+  int nibble = 0;
+  for (int i = 0; i < 8; ++i) {
+    if (mag == kE2m1Magnitudes[i]) { nibble = i; break; }
+  }
+  return std::signbit(v) ? -float(nibble) : float(nibble);
+}
+
+// UE4M3 scale, with the format tag in bit 7 masked off exactly as the tensor core does.
+static float decode_scale(uint8_t raw) {
+  cutlass::float_ue4m3_t s{};
+  s.raw() = uint8_t(raw & 0x7fu);
+  return float(s);
+}
+
+// ------------------------------------------------------------------------------------------
+// Where does a format granule actually live?
+// ------------------------------------------------------------------------------------------
+// The kernel reads one flag per granule from that granule's first MMA atom, so the host has to
+// tag whichever rows/columns that atom covers. Those are NOT simply contiguous: the TiledMma
+// carries a PermTileN of Layout<Shape<_8,_2,_2>, Stride<_1,_16,_8>>, which permutes the N
+// dimension within each aligned 32-column block, so "n-atom j covers columns 8j..8j+7" is false.
+// Assuming it silently produced correct results for every *uniform* tagging (all-E2M1, all-E0M3,
+// all-A, all-B -- a permutation of a constant is that same constant) while corrupting every
+// genuinely mixed one.
+//
+// Rather than re-derive the permutation by hand, ask CuTe: partition an identity tensor with the
+// very same TiledMma the kernel uses and read off which coordinates each (thread, atom) touches.
+// This is correct by construction and stays correct if the tile shape or warp layout changes.
+//
+// Returns a vector mapping each row (or column) of one CTA tile to a granule id.
+template <bool IsA>
+std::vector<int> build_granule_map(int atoms_per_granule) {
+  MixedTiledMma tiled_mma;
+  // Size the identity tensor from the CTA tile, exactly as the mainloop does when it calls
+  // partition_fragment_A/B on sA/sB. NOT from tile_shape(tiled_mma): that reports the TiledMma's
+  // own tile, whose N is the PermTileN extent (32) rather than the CTA tile's 128, which would
+  // silently build a map covering only the first quarter of the columns and then apply it with
+  // the wrong period.
+  int const mn_extent = IsA ? int(size<0>(ThreadBlockShape{})) : int(size<1>(ThreadBlockShape{}));
+  int const k_extent  = int(size<2>(ThreadBlockShape{}));
+
+  std::vector<int> mn_to_granule(size_t(mn_extent), -1);
+  Tensor id = make_identity_tensor(make_shape(mn_extent, k_extent));
+
+  // A granule is identified by the *set* of rows/columns it covers, canonicalised to that set's
+  // smallest member -- not by the warp that happens to touch it. With AtomLayoutMNK = 4x2 the
+  // warp index encodes both an M and an N position, so warps 0 and 4 cover identical rows of A
+  // (differing only in which columns of B they take). They must therefore share one A granule,
+  // and they do: they read the same scale factors. Keying on the warp id instead would declare
+  // that a conflict.
+  // A granule is what a whole *warp* covers for one group of atoms -- the flag is read by all 32
+  // lanes and drives a warp-wide branch, so the unit is the warp's coverage, not one lane's.
+  // Accumulate per (warp, atom-group) across every thread of the warp first, then canonicalise
+  // each set to its smallest member. Warps that cover identical rows (with AtomLayoutMNK = 4x2,
+  // warps 0 and 4 do) land on the same representative and correctly share one granule.
+  int const num_threads = int(size(typename MixedTiledMma::ThrLayoutVMNK{}));
+  std::map<std::pair<int, int>, std::set<int>> coverage;  // (warp, group) -> rows/cols
+  for (int tid = 0; tid < num_threads; ++tid) {
+    auto thr_mma = tiled_mma.get_thread_slice(tid);
+    auto frag = [&] {
+      if constexpr (IsA) { return thr_mma.partition_A(id); }
+      else               { return thr_mma.partition_B(id); }
+    }();
+    int const num_atoms = int(size<1>(frag));
+    for (int atom = 0; atom < num_atoms; ++atom) {
+      auto &dst = coverage[{tid / 32, atom / atoms_per_granule}];
+      for (int v = 0; v < int(size<0>(frag)); ++v) {
+        for (int kk = 0; kk < int(size<2>(frag)); ++kk) {
+          int const mn = get<0>(frag(v, atom, kk));
+          if (mn >= 0 && mn < mn_extent) { dst.insert(mn); }
+        }
+      }
+    }
+  }
+
+  for (auto const &[key, covered] : coverage) {
+    if (covered.empty()) { continue; }
+    int const rep = *covered.begin();  // std::set is ordered, so this is the minimum
+    for (int mn : covered) {
+      if (mn_to_granule[size_t(mn)] == -1) {
+        mn_to_granule[size_t(mn)] = rep;
+      }
+      else if (mn_to_granule[size_t(mn)] != rep) {
+        std::cerr << "FATAL: " << (IsA ? "row " : "column ") << mn
+                  << " belongs to two partially-overlapping format granules (representatives "
+                  << mn_to_granule[size_t(mn)] << " and " << rep
+                  << "). No host-side tagging can satisfy this kernel at "
+                  << atoms_per_granule << " atoms per granule." << std::endl;
+        std::exit(1);
+      }
+    }
+  }
+  for (int i = 0; i < mn_extent; ++i) {
+    if (mn_to_granule[size_t(i)] == -1) {
+      std::cerr << "FATAL: " << (IsA ? "row " : "column ") << i
+                << " is not covered by any MMA atom" << std::endl;
+      std::exit(1);
+    }
+  }
+  return mn_to_granule;
+}
+
+enum class TagMode { kNone, kRandom, kAllA, kAllB, kAll };
+
+static TagMode parse_tag_mode() {
+  const char *e = std::getenv("MIXFP4_TAG");
+  if (e == nullptr) { return TagMode::kRandom; }
+  std::string s{e};
+  if (s == "none" || s == "0") { return TagMode::kNone; }
+  if (s == "a")                { return TagMode::kAllA; }
+  if (s == "b")                { return TagMode::kAllB; }
+  if (s == "all")              { return TagMode::kAll; }
+  return TagMode::kRandom;
+}
+
+static const char *tag_mode_name(TagMode t) {
+  switch (t) {
+    case TagMode::kNone:   return "none (all E2M1 -- site 0 only)";
+    case TagMode::kAllA:   return "all-A (E0M3 x E2M1 -- site 1 only)";
+    case TagMode::kAllB:   return "all-B (E2M1 x E0M3 -- site 2 only)";
+    case TagMode::kAll:    return "all (E0M3 x E0M3 -- site 3 only)";
+    default:               return "random per granule (all four sites)";
+  }
+}
+
 int run(int m, int n, int k, int warmup_iters, int bench_iters) {
   using Sm1xxBlkScaledConfig = typename Gemm::GemmKernel::CollectiveMainloop::Sm1xxBlkScaledConfig;
 
@@ -199,6 +356,78 @@ int run(int m, int n, int k, int warmup_iters, int bench_iters) {
   initialize_block(block_sfa.host_view(), 2024);
   initialize_block(block_sfb.host_view(), 2025);
 
+  // ------------------------------------------------------------------------------------------
+  // Format tagging: set bit 7 of the scale bytes to mark E0M3 granules.
+  // ------------------------------------------------------------------------------------------
+  // The granule must match what the kernel honours (see
+  // collective/sm120_blockscaled_mma_tma_mixed.hpp). The kernel reads one flag per granule from
+  // that granule's first atom and applies it to the whole granule, so every scale byte in a
+  // granule must carry the same bit. Tagging finer than the granule is not merely inaccurate:
+  // below one atom it makes lanes of a warp disagree and runs mma.sync.aligned partially
+  // converged, which is undefined behaviour. Build with -DMIXFP4_DEBUG_UNIFORMITY=1 to catch it.
+  constexpr int kAGranuleRows = MIXFP4_A_ATOMS_PER_GRANULE * 16;  // atom M is 16
+  constexpr int kBGranuleCols = MIXFP4_B_ATOMS_PER_GRANULE * 8;   // atom N is 8
+  constexpr int kKGranule     = size<2>(ThreadBlockShape{});      // one k_tile
+
+  TagMode const tag_mode = parse_tag_mode();
+  {
+    // granule_map tells us, for each row/column within one CTA tile, which granule it belongs to
+    // (accounting for the TiledMma's N permutation). Two rows/columns in the same granule of the
+    // same tile and the same k_tile must always get the same flag.
+    auto tag = [](auto tensor, int mn_extent, int k_extent, std::vector<int> const &granule_map,
+                  int k_granule, uint64_t seed, bool force) {
+      int const tile_mn = int(granule_map.size());
+      for (int mn = 0; mn < mn_extent; ++mn) {
+        int const granule_id =
+            (mn / tile_mn) * 100000 + granule_map[size_t(mn % tile_mn)];
+        for (int kk = 0; kk < k_extent; ++kk) {
+          bool set = force;
+          if (!force) {
+            uint64_t h = seed;
+            h = h * 6364136223846793005ull + uint64_t(granule_id) + 1;
+            h ^= h >> 29;
+            h = h * 6364136223846793005ull + uint64_t(kk / k_granule) + 1;
+            h ^= h >> 29;
+            set = (h & 1ull) != 0;
+          }
+          if (set) { tensor(mn, kk, 0).raw() |= 0x80; }
+        }
+      }
+    };
+    std::vector<int> const a_granule_map =
+        build_granule_map<true>(MIXFP4_A_ATOMS_PER_GRANULE);
+    std::vector<int> const b_granule_map =
+        build_granule_map<false>(MIXFP4_B_ATOMS_PER_GRANULE);
+    bool const rand_a  = (tag_mode == TagMode::kRandom);
+    bool const rand_b  = (tag_mode == TagMode::kRandom);
+    bool const force_a = (tag_mode == TagMode::kAllA || tag_mode == TagMode::kAll);
+    bool const force_b = (tag_mode == TagMode::kAllB || tag_mode == TagMode::kAll);
+    if (rand_a || force_a) {
+      tag(make_tensor(block_sfa.host_data(), layout_sfa), m, k, a_granule_map, kKGranule,
+          0x9e3779b97f4a7c15ull, force_a);
+    }
+    if (rand_b || force_b) {
+      tag(make_tensor(block_sfb.host_data(), layout_sfb), n, k, b_granule_map, kKGranule,
+          0xbf58476d1ce4e5b9ull, force_b);
+    }
+  }
+  if (std::getenv("MIXFP4_PRINT_MAP") != nullptr) {
+    auto show = [](const char *name, std::vector<int> const &mp) {
+      std::cout << name << " (index -> granule rep):";
+      for (size_t i = 0; i < mp.size(); ++i) {
+        if (i % 16 == 0) { std::cout << "\n  [" << i << "]\t"; }
+        std::cout << mp[i] << " ";
+      }
+      std::cout << std::endl;
+    };
+    show("A row map", build_granule_map<true>(MIXFP4_A_ATOMS_PER_GRANULE));
+    show("B col map", build_granule_map<false>(MIXFP4_B_ATOMS_PER_GRANULE));
+    return 0;
+  }
+  std::cout << "Format tagging: " << tag_mode_name(tag_mode)
+            << "; granule = " << kAGranuleRows << " rows of A x " << kBGranuleCols
+            << " cols of B x " << kKGranule << " K" << std::endl;
+
   block_a.sync_device();
   block_b.sync_device();
   block_c.sync_device();
@@ -224,72 +453,77 @@ int run(int m, int n, int k, int warmup_iters, int bench_iters) {
   CUTLASS_CHECK(gemm_op.run());
   CUDA_CHECK(cudaDeviceSynchronize());
 
-  // Correctness check against CUTLASS's generic (block-scaled) host reference GEMM.
-  Tensor tensor_a = make_tensor(make_iterator(block_a.host_data()), layout_a);
+  // ------------------------------------------------------------------------------------------
+  // Correctness against the mixed-format host reference.
+  // ------------------------------------------------------------------------------------------
+  Tensor tensor_a   = make_tensor(make_iterator(block_a.host_data()), layout_a);
   Tensor tensor_sfa = make_tensor(block_sfa.host_data(), layout_sfa);
-  Tensor tensor_b = make_tensor(make_iterator(block_b.host_data()), layout_b);
+  Tensor tensor_b   = make_tensor(make_iterator(block_b.host_data()), layout_b);
   Tensor tensor_sfb = make_tensor(block_sfb.host_data(), layout_sfb);
+  auto tensor_c     = make_tensor(make_iterator(block_c.host_data()), layout_c);
 
-  cutlass::reference::host::GettBlockScalingMainloopParams<
-      ElementAccumulator, decltype(tensor_a), decltype(tensor_sfa), decltype(tensor_b),
-      decltype(tensor_sfb)>
-      mainloop_params{tensor_a, tensor_sfa, tensor_b, tensor_sfb};
+  // Decode both operands to scaled floats first, honouring each granule's format, then do a
+  // plain float GEMM. Decoding up front turns an O(M*N*K) inner loop full of sub-byte and
+  // scale-factor address arithmetic into O(M*K + N*K) of it, which is what makes reference sizes
+  // past ~1k tractable at all.
+  std::vector<float> a_dec(size_t(m) * size_t(k));
+  std::vector<float> b_dec(size_t(n) * size_t(k));
 
-  auto tensor_c = make_tensor(make_iterator(block_c.host_data()), layout_c);
-  auto tensor_ref_d = make_tensor(make_iterator(block_ref_d.host_data()), layout_d);
-
-  cutlass::reference::host::GettBlockScalingEpilogueParams<
-      ElementAccumulator, ElementAccumulator, ElementAccumulator, decltype(tensor_c),
-      decltype(tensor_ref_d)>
-      epilogue_params{alpha, beta, tensor_c, tensor_ref_d};
-
-  cutlass::reference::host::Gemm3x(mainloop_params, epilogue_params);
-
-  block_d.sync_host();
-  bool passed = cutlass::reference::host::TensorEquals(block_ref_d.host_view(), block_d.host_view());
-  passed &= cutlass::reference::host::TensorNorm(block_ref_d.host_view()) > 0;
-  passed &= cutlass::reference::host::TensorNorm(block_d.host_view()) > 0;
-
-  std::cout << "Correctness: " << (passed ? "PASSED" : "FAILED") << std::endl;
-  if (!passed) {
-    return -1;
+#pragma omp parallel for schedule(static)
+  for (int i = 0; i < m; ++i) {
+    for (int kk = 0; kk < k; ++kk) {
+      uint8_t const sf = tensor_sfa(i, kk, 0).raw();
+      float v = float(static_cast<cutlass::float_e2m1_t>(tensor_a(i, kk, 0)));
+      if (sf & 0x80u) { v = reinterpret_e2m1_as_e0m3(v); }
+      a_dec[size_t(i) * size_t(k) + size_t(kk)] = v * decode_scale(sf);
+    }
+  }
+#pragma omp parallel for schedule(static)
+  for (int j = 0; j < n; ++j) {
+    for (int kk = 0; kk < k; ++kk) {
+      uint8_t const sf = tensor_sfb(j, kk, 0).raw();
+      float v = float(static_cast<cutlass::float_e2m1_t>(tensor_b(j, kk, 0)));
+      if (sf & 0x80u) { v = reinterpret_e2m1_as_e0m3(v); }
+      b_dec[size_t(j) * size_t(k) + size_t(kk)] = v * decode_scale(sf);
+    }
   }
 
-  // Optional perf-only mode: tag scale-factor bit 7 so the benchmark actually exercises all four
-  // dispatch arms. Without this every granule reports flag=0 (TensorFillRandomUniform never
-  // produces a UE4M3 byte with bit 7 set for the 1..4 range used above), so the timed loop only
-  // ever runs site 0 and measures a perfectly-predicted branch -- flattering, and not what a real
-  // mixed workload looks like.
-  //
-  // Done after the correctness check on purpose. Bit 7 is ignored by the tensor core but NOT by
-  // the host reference decode, so tagged data would fail the comparison; and pre-patch all four
-  // sites are the same e2m1 x e2m1 instruction, so the tag changes which arm runs without
-  // changing any result. Correctness is therefore still checked, on untagged data, above.
-  //
-  // Tagging granularity matches what the hoisted dispatch supports (see
-  // collective/sm120_blockscaled_mma_tma_mixed.hpp): A is uniform per 32 rows x 128 K, B per 64
-  // columns x 128 K.
-  if (const char *tag_env = std::getenv("MIXFP4_TAG_FLAGS"); tag_env && std::atoi(tag_env) != 0) {
-    auto tag = [](auto tensor, int mn_extent, int k_extent, int mn_granule, int k_granule,
-                  uint64_t seed) {
-      for (int mn = 0; mn < mn_extent; ++mn) {
-        for (int k = 0; k < k_extent; ++k) {
-          uint64_t h = seed;
-          h = h * 6364136223846793005ull + uint64_t(mn / mn_granule) + 1;
-          h ^= h >> 29;
-          h = h * 6364136223846793005ull + uint64_t(k / k_granule) + 1;
-          h ^= h >> 29;
-          if (h & 1ull) {
-            tensor(mn, k, 0).raw() |= 0x80;
-          }
-        }
-      }
-    };
-    tag(make_tensor(block_sfa.host_data(), layout_sfa), m, k, 32, 128, 0x9e3779b97f4a7c15ull);
-    tag(make_tensor(block_sfb.host_data(), layout_sfb), n, k, 64, 128, 0xbf58476d1ce4e5b9ull);
-    block_sfa.sync_device();
-    block_sfb.sync_device();
-    std::cout << "Dispatch flags: TAGGED (all four format arms live)" << std::endl;
+  block_d.sync_host();
+  auto tensor_d = make_tensor(make_iterator(block_d.host_data()), layout_d);
+
+  // Compare by relative Frobenius norm rather than element-wise relative error. The GPU sums K
+  // in a different order than the reference and rounds the result to bfloat16, so individual
+  // elements whose accumulation nearly cancels can show a large relative error while the result
+  // is entirely correct. A norm ratio is insensitive to that but still moves decisively (order
+  // 1, not 1e-3) if any granule decodes under the wrong codebook.
+  double num = 0.0, den = 0.0, max_abs_err = 0.0;
+#pragma omp parallel for schedule(static) reduction(+ : num, den) reduction(max : max_abs_err)
+  for (int i = 0; i < m; ++i) {
+    float const *ap = &a_dec[size_t(i) * size_t(k)];
+    for (int j = 0; j < n; ++j) {
+      float const *bp = &b_dec[size_t(j) * size_t(k)];
+      float acc = 0.f;
+      for (int kk = 0; kk < k; ++kk) { acc += ap[kk] * bp[kk]; }
+      float const ref = alpha * acc + beta * float(static_cast<cutlass::bfloat16_t>(tensor_c(i, j, 0)));
+      float const got = float(static_cast<cutlass::bfloat16_t>(tensor_d(i, j, 0)));
+      double const d  = double(got) - double(ref);
+      num += d * d;
+      den += double(ref) * double(ref);
+      max_abs_err = std::max(max_abs_err, std::fabs(d));
+    }
+  }
+
+  double const rel_err = (den > 0.0) ? std::sqrt(num / den) : (num > 0.0 ? 1.0 : 0.0);
+  // bfloat16 carries 8 mantissa bits, so per-element rounding alone is ~2^-9 relative; over a
+  // K-length reduction with a different summation order the norm ratio lands a little above
+  // that. 1e-2 is far below the ~1.0 a mis-decoded granule produces and far above the noise.
+  bool const passed = (den > 0.0) && (rel_err < 1e-2);
+
+  std::cout << "Correctness: " << (passed ? "PASSED" : "FAILED")
+            << "  (relative Frobenius error " << rel_err
+            << ", max abs error " << max_abs_err << ")" << std::endl;
+  if (!passed) {
+    return -1;
   }
 
   // Benchmark.

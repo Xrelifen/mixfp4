@@ -63,8 +63,22 @@ OMMA_RE = re.compile(
     r"[^;]*;\s*"
     r"/\* 0x([0-9a-fA-F]{16}) \*/"
 )
-PRMT_RE = re.compile(r"PRMT (R\d+), R\d+, (0x[0-9a-fA-F]+), R\d+")
 SECOND_WORD_RE = re.compile(r"/\* 0x([0-9a-fA-F]{16}) \*/")
+
+# Any instruction whose first operand is a plain register writes that register. Store-style
+# instructions put a bracketed address first (`STS [R0+0x10], R76`) so they do not match, which is
+# what we want -- their register operand is a source.
+#
+# Operands can carry a `.reuse` suffix and the opcode can be predicated, both of which an earlier
+# version of this script failed to allow for. That was not a cosmetic bug: a PRMT it declined to
+# match did not stop the backward scan, so the scan ran past it to an *older* PRMT that happened to
+# write the same register number, and silently attributed those OMMAs to the wrong format site
+# (observed as a 128/132/128/124 census where all four must be 128). Hence the structure below:
+# find the nearest writer of the register, whatever it is, and insist it be a tagged PRMT.
+DEF_RE = re.compile(
+    r"/\*[0-9a-f]{4,}\*/\s+(?:@!?U?P[T\d]+\s+)?([A-Z][A-Z0-9._]*)\s+(R\d+)(?:\.reuse)?\s*,"
+)
+PRMT_SEL_RE = re.compile(r"PRMT\S*\s+R\d+(?:\.reuse)?\s*,\s*[^,]+,\s*(0x[0-9a-fA-F]+)\s*,")
 
 
 def parse_ommas(sass: str):
@@ -89,19 +103,27 @@ def parse_ommas(sass: str):
         if word1 is None:
             raise RuntimeError(f"no second encoding word after OMMA at 0x{addr:x}")
 
-        # Walk back to the PRMT that defines this OMMA's SFA operand.
-        selector = None
-        for j in range(i, max(0, i - 600), -1):
-            mp = PRMT_RE.search(lines[j])
-            if mp and mp.group(1) == sfa_reg:
-                selector = int(mp.group(2), 16)
+        # Walk back to the nearest instruction that writes this OMMA's SFA operand, and require
+        # it to be one of our tagged identity PRMTs. Anything else is a parse failure, not a
+        # reason to keep looking -- see the DEF_RE comment.
+        definer = None
+        for j in range(i - 1, max(0, i - 4000), -1):
+            md = DEF_RE.search(lines[j])
+            if md and md.group(2) == sfa_reg:
+                definer = lines[j]
                 break
-        if selector is None:
+        if definer is None:
             raise RuntimeError(
-                f"OMMA at 0x{addr:x} reads {sfa_reg} with no defining identity PRMT above it -- "
-                "the per-site tag is missing, so sites cannot be told apart. Did ptxas fold the "
-                "prmt away, or was the atom changed?"
+                f"OMMA at 0x{addr:x} reads {sfa_reg} with no visible definition above it"
             )
+        mp = PRMT_SEL_RE.search(definer)
+        if not mp:
+            raise RuntimeError(
+                f"OMMA at 0x{addr:x}: {sfa_reg} is defined by a non-PRMT instruction, so its "
+                f"format site cannot be identified:\n  {definer.strip()}\n"
+                "Did ptxas fold the per-site identity prmt away, or was the atom changed?"
+            )
+        selector = int(mp.group(1), 16)
         if selector not in SITE_BY_SELECTOR:
             raise RuntimeError(
                 f"OMMA at 0x{addr:x} tagged with unknown prmt selector 0x{selector:x}; "
