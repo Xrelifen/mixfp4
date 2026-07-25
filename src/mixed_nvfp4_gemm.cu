@@ -462,12 +462,24 @@ int run(int m, int n, int k, int warmup_iters, int bench_iters) {
   Tensor tensor_sfb = make_tensor(block_sfb.host_data(), layout_sfb);
   auto tensor_c     = make_tensor(make_iterator(block_c.host_data()), layout_c);
 
+  // The O(M*N*K) host reference is the long pole past ~2k, and pure throughput runs do not need
+  // it. MIXFP4_SKIP_REF=1 reports the kernel as unverified rather than silently claiming a pass.
+  bool const skip_ref = [] {
+    const char *e = std::getenv("MIXFP4_SKIP_REF");
+    return e != nullptr && std::atoi(e) != 0;
+  }();
+  if (skip_ref) {
+    std::cout << "Correctness: SKIPPED (MIXFP4_SKIP_REF=1)" << std::endl;
+  }
+
   // Decode both operands to scaled floats first, honouring each granule's format, then do a
   // plain float GEMM. Decoding up front turns an O(M*N*K) inner loop full of sub-byte and
   // scale-factor address arithmetic into O(M*K + N*K) of it, which is what makes reference sizes
   // past ~1k tractable at all.
-  std::vector<float> a_dec(size_t(m) * size_t(k));
-  std::vector<float> b_dec(size_t(n) * size_t(k));
+  double num = 0.0, den = 0.0, max_abs_err = 0.0;
+  std::vector<float> a_dec(skip_ref ? 0 : size_t(m) * size_t(k));
+  std::vector<float> b_dec(skip_ref ? 0 : size_t(n) * size_t(k));
+  if (!skip_ref) {
 
 #pragma omp parallel for schedule(static)
   for (int i = 0; i < m; ++i) {
@@ -496,7 +508,6 @@ int run(int m, int n, int k, int warmup_iters, int bench_iters) {
   // elements whose accumulation nearly cancels can show a large relative error while the result
   // is entirely correct. A norm ratio is insensitive to that but still moves decisively (order
   // 1, not 1e-3) if any granule decodes under the wrong codebook.
-  double num = 0.0, den = 0.0, max_abs_err = 0.0;
 #pragma omp parallel for schedule(static) reduction(+ : num, den) reduction(max : max_abs_err)
   for (int i = 0; i < m; ++i) {
     float const *ap = &a_dec[size_t(i) * size_t(k)];
@@ -513,17 +524,20 @@ int run(int m, int n, int k, int warmup_iters, int bench_iters) {
     }
   }
 
+  }  // !skip_ref
+
   double const rel_err = (den > 0.0) ? std::sqrt(num / den) : (num > 0.0 ? 1.0 : 0.0);
   // bfloat16 carries 8 mantissa bits, so per-element rounding alone is ~2^-9 relative; over a
   // K-length reduction with a different summation order the norm ratio lands a little above
   // that. 1e-2 is far below the ~1.0 a mis-decoded granule produces and far above the noise.
-  bool const passed = (den > 0.0) && (rel_err < 1e-2);
-
-  std::cout << "Correctness: " << (passed ? "PASSED" : "FAILED")
-            << "  (relative Frobenius error " << rel_err
-            << ", max abs error " << max_abs_err << ")" << std::endl;
-  if (!passed) {
-    return -1;
+  if (!skip_ref) {
+    bool const passed = (den > 0.0) && (rel_err < 1e-2);
+    std::cout << "Correctness: " << (passed ? "PASSED" : "FAILED")
+              << "  (relative Frobenius error " << rel_err
+              << ", max abs error " << max_abs_err << ")" << std::endl;
+    if (!passed) {
+      return -1;
+    }
   }
 
   // Benchmark.
