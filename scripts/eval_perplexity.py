@@ -41,27 +41,29 @@ from mixfp4.codebook import GROUP_SIZE  # noqa: E402
 from mixfp4.quant import quantize_dequantize, quantize_mixfp4  # noqa: E402
 from mixfp4.quantizers import QuantConfig, available_methods  # noqa: E402
 
-#: name -> (format_policy, method).  ``fp16`` is the unquantised control.
-CONFIGS = {
-    "fp16": None,
-    "nvfp4-rtn": ("e2m1", "rtn"),
-    "nvfp4-search": ("e2m1", "rtn_search"),
-    "nvfp4-hqq": ("e2m1", "hqq"),
-    "e0m3-rtn": ("e0m3", "rtn"),
-    "mixed-rtn": ("mixed", "rtn"),
-    "mixed-search": ("mixed", "rtn_search"),
-    "mixed-hqq": ("mixed", "hqq"),
-    # Four Over Six (arXiv:2512.02010): per-block choice between mapping amax onto 6 or onto 4.
-    "46-all4-rtn": ("e2m1-4", "rtn"),      # every block capped at 4 -- the paper's Table 3 control
-    "46-rtn": ("nvfp4-46", "rtn"),         # the paper's method
-    "46-hqq": ("nvfp4-46", "hqq"),
-    # Both axes at once: choose the cap *and* the codebook, three candidates per group.
-    "mixed46-rtn": ("mixed-46", "rtn"),
-    "mixed46-hqq": ("mixed-46", "hqq"),
+#: Short label -> format policy.  The candidate encodings a group may choose between.
+POLICIES = {
+    "nvfp4": "nvfp4",        # E2M1, amax onto 6 -- standard NVFP4, no per-group choice
+    "e2m1@4": "e2m1-4",      # E2M1, amax onto 4 everywhere -- Four Over Six's Table 3 control
+    "e0m3": "e0m3",          # sign-magnitude INT4 everywhere
+    "46": "nvfp4-46",        # Four Over Six: choose 6 or 4 per group
+    "mixed": "mixed",        # mixfp4: choose E2M1@6 or E0M3@7 per group
+    "mixed46": "mixed-46",   # all three candidates per group
 }
 
-DEFAULT_CONFIGS = ["fp16", "nvfp4-rtn", "e0m3-rtn", "mixed-rtn",
-                   "46-rtn", "mixed46-rtn", "nvfp4-hqq", "mixed-hqq", "46-hqq", "mixed46-hqq"]
+#: Short label -> fitting method, applied once a candidate is chosen.
+METHODS = {
+    "rtn": "rtn",            # round to nearest at the amax-derived scale
+    "search": "rtn_search",  # sweep 8 scale multipliers, keep the best
+    "hqq": "hqq",            # HQQ-style half-quadratic proximal optimisation
+}
+
+#: The full grid, plus the unquantised control.
+CONFIGS = {"fp16": None}
+CONFIGS.update({f"{pol}-{meth}": (POLICIES[pol], METHODS[meth])
+                for pol in POLICIES for meth in METHODS})
+
+DEFAULT_CONFIGS = ["fp16"] + [f"{pol}-{meth}" for pol in POLICIES for meth in METHODS]
 
 
 def quantizable_layers(model, skip: tuple[str, ...]):
