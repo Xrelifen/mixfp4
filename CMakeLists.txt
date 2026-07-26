@@ -54,3 +54,10 @@ target_link_libraries(mixed_nvfp4_gemm PRIVATE nvidia::cutlass::tools::util)
 target_include_directories(mixed_nvfp4_gemm PRIVATE 3rdparty/cutlass/examples/common src)
 cutlass_apply_cuda_gencode_flags(mixed_nvfp4_gemm SM_ARCHS 120a)
 target_compile_options(mixed_nvfp4_gemm PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-lineinfo>)
+
+# cuBLASLt throughput baseline (bf16 / fp8 / block-scaled nvfp4). Not a CUTLASS kernel -- it
+# answers "what does the vendor library give you", which is the comparison that matters when
+# deciding whether a custom mixed-format kernel is worth maintaining.
+add_executable(cublas_bench src/cublas_bench.cu)
+cutlass_apply_cuda_gencode_flags(cublas_bench SM_ARCHS 120a)
+target_link_libraries(cublas_bench PRIVATE cublasLt cublas)
