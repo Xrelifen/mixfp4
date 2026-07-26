@@ -345,11 +345,43 @@ conclusion to E0M3.
 eight multiplier evaluations rather than twenty annealed iterations. Worth knowing when
 quantisation time is a constraint.
 
-**One non-monotonicity.** Under `search`, adding the third candidate makes things *worse*:
-`mixed + 4/6` reaches 11.9% where `4/6` alone reaches 16.5%. A wider menu cannot hurt if selection
-were exact, so this is direct evidence that per-group reconstruction error is a loose proxy — more
-candidates give the proxy more chances to pick wrong. Same underlying problem as the `select-p`
-instability noted earlier.
+### Qwen2.5-0.5B — 60 windows
+
+| baseline | ppl | vs fp16 |
+|---|---|---|
+| W16A16 (fp16) | 12.293 | — |
+| W16A4 (activations only) | 13.302 | +1.009 |
+| W4A4 NVFP4 RTN (reference) | 14.837 | +2.544 |
+
+| candidates per group | RTN ppl | recov | search ppl | recov | HQQ ppl | recov |
+|---|---|---|---|---|---|---|
+| E2M1@6 — plain NVFP4 | 14.837 | 0.0% | 14.676 | 6.3% | 14.620 | 8.5% |
+| E2M1@4 — *all* blocks | 15.947 | −43.6% | 15.771 | −36.7% | 16.049 | −47.6% |
+| E0M3 — *all* blocks | 15.940 | −43.4% | 16.102 | −49.7% | 16.000 | −45.7% |
+| 4/6 adaptive | 14.716 | 4.7% | 14.486 | 13.8% | 14.557 | 11.0% |
+| mixed E2M1/E0M3 | 14.496 | 13.4% | 14.409 | 16.8% | 14.403 | 17.1% |
+| **mixed + 4/6** | 14.485 | 13.8% | **14.341** | **19.5%** | 14.366 | 18.5% |
+
+### Across both grids
+
+**`mixed + 4/6` is the best policy on both models** — the top cell of each grid is one of its rows.
+Offering all three candidates per group wins.
+
+**Neither alternative format is usable on its own, on either model**, and Qwen is far more brutal
+about it: −37% to −50% for the non-adaptive rows, against −16% to −25% on OPT.
+
+**Every adaptive row beats NVFP4 at every method level** — twelve for twelve across both grids.
+
+**HQQ is the method to pick, though not always the winner.** On `mixed + 4/6` it gives 18.7% (OPT)
+and 18.5% (Qwen) — remarkably consistent. `search` gives 19.5% on Qwen but only 11.9% on OPT, so
+it is higher-variance despite occasionally winning.
+
+**A non-monotonicity, on one model only.** Under `search` on OPT, adding the third candidate is
+*worse* than the best pair — 11.9% against 16.5% for `4/6` alone. A wider menu cannot hurt if
+selection were exact, so this is evidence that per-group reconstruction error is a loose proxy for
+end-to-end loss. It does **not** reproduce on Qwen, where the same cell is the best in the grid
+(19.5%), so it is one data point rather than a general law — but it is the same underlying problem
+as the `select-p` instability noted earlier.
 
 ## Caveats
 
