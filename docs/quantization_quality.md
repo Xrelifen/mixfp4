@@ -4,15 +4,23 @@ The CUDA work in `docs/mixed_nvfp4_report.md` answered *can a mixed-format GEMM 
 (yes, 1.0–4.9% over stock NVFP4). It never asked whether mixing is worth doing. This measures that:
 wikitext-2 perplexity against ordinary NVFP4, holding everything else fixed.
 
-**Short answer: yes, but modestly, and only if you select the format on the right objective.**
-The best configuration on both models tested recovers 18–23% of the perplexity that 4-bit
-quantisation costs, relative to pure NVFP4. Selecting on plain squared error — the obvious
-choice — can make things *worse* than not mixing at all.
+**Short answer: yes — and the answer depends heavily on whether activations are also quantised.**
 
-A later section adds *Four Over Six* (arXiv:2512.02010), which attacks the same weakness in E2M1
-by a different route. It reaches the same −0.2 to −0.34 ppl band, and — the more interesting
-result — **the two do not stack**: offering both choices per group is better than either in only
-one of six cells. They are competing fixes for one defect, not complementary ones.
+Under **W4A4**, which is the regime that matters and the one *Four Over Six* (arXiv:2512.02010)
+targets, the best configuration is **all three candidates per group plus HQQ-style fitting**
+(`mixed46-hqq`): −0.54 ppl on OPT-125m and −0.47 on Qwen2.5-0.5B against ordinary NVFP4, with an
+almost identical ranking on both models. Jump to [W4A4](#w4a4--and-why-the-weight-only-conclusions-above-are-the-wrong-ones).
+
+Under **W4A16** (weight-only) every effect is roughly half the size, and two conclusions that
+section reaches do not survive the move to W4A4:
+
+- that mixing can be *worse* than not mixing — an artifact of weight-only; both such rows flip
+  sign under W4A4;
+- that E0M3 mixing and Four Over Six **do not stack** — they do stack under W4A4, in all four
+  cells tested.
+
+The weight-only sections are kept below because they are what motivated the W4A4 run, and because
+the contrast between the two regimes is the most useful thing measured here.
 
 ## Method
 
@@ -32,10 +40,12 @@ Everything is held fixed except the two variables under test:
   half-quadratic proximal optimisation, see below).
 
 Group size 16, UE4M3 per-group scales plus one global fp32 factor, `lm_head` left in fp16.
-Wikitext-2 test, 2048-token windows, 140 windows. Reproduce with:
+Wikitext-2 test, 2048-token windows (140 for W4A16 and for OPT under W4A4; 60 for Qwen under
+W4A4, to fit the time budget — internally consistent either way). Reproduce with:
 
 ```bash
-python scripts/eval_perplexity.py --model Qwen/Qwen2.5-0.5B --select-p 0.5
+python scripts/eval_perplexity.py --model Qwen/Qwen2.5-0.5B --select-p 0.5           # W4A16
+python scripts/eval_perplexity.py --model Qwen/Qwen2.5-0.5B --activations match      # W4A4
 ```
 
 ### The HQQ-style method
@@ -51,9 +61,11 @@ scale, and the zero-point update is replaced by a least-squares scale update, `s
 20 iterations) are HQQ's. Calling it "HQQ" outright would overclaim; it is HQQ's machinery applied
 to a different meta-parameter.
 
-## Results
+## Results — W4A16 (weight-only)
 
-`select-p` is the exponent of the norm used to *choose* between codebooks per group.
+Kept for the contrast with W4A4 below; see the caveat in the summary above before drawing
+conclusions from this section. `select-p` is the exponent of the norm used to *choose* between
+candidates per group.
 
 ### Qwen2.5-0.5B (fp16 baseline 13.070)
 
@@ -179,6 +191,124 @@ W4A16.** Their Figure 2 attributes NVFP4's degradation to near-maximal values in
 weights, and quantising activations is where values near 5 are most damaging. Weight-only removes
 half of the problem the method was designed for, so the small gains here are not evidence against
 it. Their models are also 1B–70B rather than 0.1–0.5B.
+
+## W4A4 — and why the weight-only conclusions above are the wrong ones
+
+Everything to this point is weight-only (W4A16). That turns out to be the wrong regime to judge
+any of these methods in, including Four Over Six, whose own Figure 2 locates most of NVFP4's
+damage in *activations*.
+
+Activations are quantised dynamically, per token, in groups of 16 along K — structurally identical
+to weights grouped per output channel along K, so the same fitting path is reused. `--activations
+match` ties the activation policy to the weight policy, which is how 4/6 is meant to be used (its
+Figure 3 puts `Q(4/6)` on the activation path too).
+
+Where the error comes from, on OPT-125m:
+
+| | ppl | vs fp16 |
+|---|---|---|
+| fp16 | 27.656 | — |
+| W16A4 (activations only) | 28.785 | +1.130 |
+| W4A16 (weights only) | 29.151 | +1.495 |
+| W4A4 (both) | 30.553 | +2.897 |
+
+The two sources are close to additive (1.130 + 1.495 = 2.624 against an observed 2.897), so
+weight-only was measuring roughly half the problem.
+
+### OPT-125m, W4A4, matched activations, MSE selection
+
+fp16 row is W16A4 (28.785); `vs nvfp4-rtn` is against 30.553.
+
+| config | ppl | vs nvfp4-rtn | same figure under W4A16 |
+|---|---|---|---|
+| e0m3-rtn | 31.268 | +0.715 | +0.508 |
+| mixed-rtn | 30.349 | **−0.204** | **+0.123** ← sign flip |
+| 46-rtn | 30.393 | −0.159 | −0.002 |
+| mixed46-rtn | 30.315 | **−0.238** | **+0.098** ← sign flip |
+| nvfp4-hqq | 30.172 | −0.381 | −0.320 |
+| mixed-hqq | 30.071 | −0.481 | −0.134 |
+| 46-hqq | 30.069 | −0.483 | −0.221 |
+| **mixed46-hqq** | **30.010** | **−0.543** | −0.156 |
+
+### Qwen2.5-0.5B, W4A4, matched activations, MSE selection
+
+60 windows rather than 140, to fit the time budget; internally consistent, so the `vs nvfp4-rtn`
+column is comparable across rows. The fp16 row is W16A4 (13.302); `vs nvfp4-rtn` is against 14.837.
+
+| config | ppl | vs nvfp4-rtn | same figure under W4A16 |
+|---|---|---|---|
+| e0m3-rtn | 15.940 | +1.104 | +0.230 |
+| 46-rtn | 14.716 | −0.121 | −0.038 |
+| mixed-rtn | 14.496 | −0.341 | −0.132 |
+| mixed46-rtn | 14.485 | −0.352 | −0.122 |
+| nvfp4-hqq | 14.620 | −0.217 | −0.168 |
+| 46-hqq | 14.557 | −0.280 | −0.116 |
+| mixed-hqq | 14.403 | −0.434 | −0.197 |
+| **mixed46-hqq** | **14.366** | **−0.471** | −0.220 |
+
+Every method is worth roughly twice as much under W4A4 as under W4A16, and the ordering is
+identical on both models.
+
+### Two findings above are now corrected
+
+**Correction 1: mixing is not sometimes-harmful. That was an artifact of weight-only.** Under
+W4A16, `mixed-rtn` was *worse* than plain NVFP4 on this model (+0.123), which drove the earlier
+conclusion that squared-error selection can hurt. Under W4A4 the same configuration, the same
+selection rule and the same weights give −0.204. Both mixed rows flip sign.
+
+**Correction 2: 4/6 and E0M3 mixing do stack — under W4A4.** The earlier section concluded they
+were competing fixes for one defect, because the three-way `mixed46` beat the best two-way option
+in only one of six cells. Under W4A4 it stacks in *both* cells tested:
+
+| | 3-way | best 2-way | |
+|---|---|---|---|
+| W4A16, rtn | 29.248 | 29.149 | does not stack |
+| W4A16, hqq | 28.995 | 28.930 | does not stack |
+| W4A4, rtn | 30.315 | 30.349 | **stacks** |
+| W4A4, hqq | 30.010 | 30.069 | **stacks** |
+
+and on Qwen too, in both cells (rtn 14.485 vs 14.496; hqq 14.366 vs 14.403).
+
+A plausible reading, offered as a hypothesis rather than a demonstrated mechanism: with
+`--activations match`, the per-group choice now also runs over *activation* tensors, whose
+distributions differ markedly from weights'. A wider candidate set covers a wider range of block
+shapes, so the third candidate earns its place where against weights alone it merely split the vote
+(the E0M3 share falls from ~54% to ~47% when E2M1@4 is available, in both regimes).
+
+**Unchanged: E0M3 alone is still the worst option**, and by more than before (+0.715 vs +0.508).
+Its value remains entirely in being available as a choice.
+
+### Which is best
+
+`mixed46-hqq` — all three candidates per group, HQQ-style fitting — is first on **both** models,
+and the full ranking is nearly identical across them:
+
+| rank | OPT-125m | | Qwen2.5-0.5B | |
+|---|---|---|---|---|
+| 1 | mixed46-hqq | −0.543 | mixed46-hqq | −0.471 |
+| 2 | 46-hqq | −0.483 | mixed-hqq | −0.434 |
+| 3 | mixed-hqq | −0.481 | mixed46-rtn | −0.352 |
+| 4 | nvfp4-hqq | −0.381 | mixed-rtn | −0.341 |
+| 5 | mixed46-rtn | −0.238 | 46-hqq | −0.280 |
+| 6 | mixed-rtn | −0.204 | nvfp4-hqq | −0.217 |
+| 7 | 46-rtn | −0.159 | 46-rtn | −0.121 |
+| — | e0m3-rtn | +0.715 | e0m3-rtn | +1.104 |
+
+Taking one lever at a time on top of `nvfp4-rtn`, the three are not equal:
+
+| lever | OPT | Qwen |
+|---|---|---|
+| HQQ-style fitting | −0.381 | −0.217 |
+| E0M3 mixing | −0.204 | −0.341 |
+| Four Over Six | −0.159 | −0.121 |
+
+**E0M3 mixing beats Four Over Six on both models**, and 4/6 is the weakest of the three
+individually. But that ignores cost, and on cost the ordering inverts: 4/6 needs *no format
+support at all* — no tag bit, no second codebook in the kernel, just a different scale — whereas
+E0M3 mixing is what forced the entire dispatch-tree architecture in `mixed_nvfp4_report.md`. For
+roughly 40–70% of E0M3's benefit at zero kernel cost, 4/6 is the better deal for anyone not
+already committed to a mixed-format kernel. For this repository, which *is* committed, the answer
+is to use both: they stack.
 
 ## Caveats
 
