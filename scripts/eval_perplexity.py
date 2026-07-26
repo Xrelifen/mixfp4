@@ -237,6 +237,14 @@ def main() -> int:
     else:
         print(f"activations: {args.activations} / {args.act_method} -> W4A4\n")
 
+    if args.activations != "none" and args.act_method != "rtn":
+        print(f"WARNING: --act-method {args.act_method} is not deployable.  Activations are "
+              f"quantised once per\n         forward pass and discarded inside a single matmul, "
+              f"so an iterative fit costs\n         orders of magnitude more than the matmul it "
+              f"feeds.  Real A4 kernels use RTN,\n         optionally over a small fixed "
+              f"candidate set.  Numbers from this run measure what\n         the format could "
+              f"achieve, not what a kernel can deliver.\n")
+
     results = {}
     modules = [m for _, m, _ in layers]
     for name in args.configs:

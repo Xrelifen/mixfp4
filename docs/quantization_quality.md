@@ -389,7 +389,17 @@ as the `select-p` instability noted earlier.
   ceiling. Behaviour at 7B+ is unmeasured and the literature suggests larger models are *more*
   tolerant of 4-bit weights, so these gains may shrink.
 - One dataset (wikitext-2) and one metric. No downstream task evaluation.
-- **Weight-only (W4A16) throughout.** Four Over Six targets W4A4, where its own analysis locates
+- **Activations use RTN in every reported number.** `--activations match` matches the candidate
+  *policy* to the weights, not the fitting method, so an `-hqq` row means HQQ on weights and
+  round-to-nearest on activations. That is deliberate: activations are quantised once per forward
+  pass and discarded inside a single matmul, so an iterative fit is not deployable. The marginal
+  cost of the adaptive part is the extra candidates -- measured here at +21% (2 candidates) and
+  +42% (3) in unfused PyTorch, against the paper's <15% for 2 candidates in a fused CUDA kernel.
+- **The activation `meta_scale` is tensor-wide**, computed by reducing over the whole `[tokens, K]`
+  tensor before anything is quantised. A fused kernel cannot do that -- it would need a separate
+  pass, a calibrated static scale, or per-token scales -- so these numbers are mildly optimistic
+  on accuracy and pessimistic on cost relative to a real implementation.
+- **Weight-only (W4A16) sections.** Four Over Six targets W4A4, where its own analysis locates
   most of the damage; measuring it here understates it. Activation quantisation is not implemented.
 - No calibration data anywhere. The obvious next step is activation-aware selection — AWQ's
   observation that error on channels which see large activations matters disproportionately.
