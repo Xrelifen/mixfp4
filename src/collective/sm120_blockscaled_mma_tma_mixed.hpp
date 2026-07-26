@@ -85,6 +85,19 @@ using namespace cute;
 #define MIXFP4_B_ATOMS_PER_GRANULE 4
 #endif
 
+// -DMIXFP4_PTX_16X16=1 replaces the C++ pattern dispatch with a single generated inline-PTX
+// statement per k_block: a 64-target brx.idx indexed by the whole flag pattern, then straight-line
+// mma.sync. It reaches the hardware-floor 16x16 granule, which the C++ path cannot -- 64 arms in
+// C++ makes cicc outline the body and spill the accumulators. The granule is fixed by the
+// generator, so pin the tagging macros to match it.
+#if defined(MIXFP4_PTX_16X16) && MIXFP4_PTX_16X16
+#undef MIXFP4_A_ATOMS_PER_GRANULE
+#define MIXFP4_A_ATOMS_PER_GRANULE 1
+#undef MIXFP4_B_ATOMS_PER_GRANULE
+#define MIXFP4_B_ATOMS_PER_GRANULE 2
+#include "collective/mixed_mma_16x16_generated.hpp"
+#endif
+
 namespace mixfp4_detail {
 
 // Compile-time dispatch on a runtime pattern index, as a balanced binary search so the cost is
@@ -969,6 +982,15 @@ struct CollectiveMma<
     // (cute/algorithm/gemm.hpp), which exists to maximise operand register reuse between
     // consecutive MMAs -- reproducing it keeps the .reuse flags ptxas emits unchanged.
     auto gemm_kblock = [&](auto pattern_c, auto k_block) {
+#if defined(MIXFP4_PTX_16X16) && MIXFP4_PTX_16X16
+      // The generated asm does its own dispatch, so the C++ pattern is unused here.
+      (void) pattern_c;
+      mixfp4::mma_kblock_16x16(accum,
+                               recast<uint32_t>(tCrA(_,_,k_block)),
+                               recast<uint32_t>(tCrB(_,_,k_block)),
+                               recast<uint32_t>(tCrSFA(_,_,k_block)),
+                               recast<uint32_t>(tCrSFB(_,_,k_block)));
+#else
       constexpr uint32_t kPattern = decltype(pattern_c)::value;
       auto zipA = make_zip_tensor(tCrA(_,_,k_block), tCrSFA(_,_,k_block));
       auto zipB = make_zip_tensor(tCrB(_,_,k_block), tCrSFB(_,_,k_block));
@@ -985,6 +1007,7 @@ struct CollectiveMma<
                      accum(_,m,ns), zipA(_,m), zipB(_,ns), accum(_,m,ns));
         });
       });
+#endif
     };
 
     // Bit 7 of scale-factor byte 0 of each operand, for the k_block already resident in
@@ -1080,7 +1103,9 @@ struct CollectiveMma<
     // structurally identical to stock nvfp4_gemm, so the cost of the dispatch can be read off as
     // a same-source A/B rather than against a separately-built binary.
     auto dispatch = [&](auto body) {
-#if defined(MIXFP4_NO_DISPATCH) && MIXFP4_NO_DISPATCH
+#if (defined(MIXFP4_NO_DISPATCH) && MIXFP4_NO_DISPATCH) || \
+    (defined(MIXFP4_PTX_16X16) && MIXFP4_PTX_16X16)
+      // PTX path: the dispatch lives inside the generated asm, so there is exactly one arm here.
       (void) &read_site;
       body(C<0>{});
 #else
