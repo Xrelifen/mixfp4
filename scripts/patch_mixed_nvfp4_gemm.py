@@ -45,6 +45,13 @@ import sys
 from collections import Counter
 
 FIELD_SHIFT = 14
+
+# How far back to look for the instruction that writes an OMMA's SFA operand. The scan stops at
+# the *first* writer regardless, so a generous window only costs time on a pathological miss --
+# whereas too small a window turns a legal build into a hard parse failure. The generated PTX
+# paths put whole jump tables between one OMMA and the next, and ptxas CSEs the identity PRMTs
+# toward the top of a straight-line block, so distances scale with the table size.
+SCAN_WINDOW = 200000
 # prmt selector -> (site index, format name, format bits)
 SITE_BY_SELECTOR = {
     0x3210: (0, "e2m1_e2m1", 0b00),
@@ -107,7 +114,7 @@ def parse_ommas(sass: str):
         # it to be one of our tagged identity PRMTs. Anything else is a parse failure, not a
         # reason to keep looking -- see the DEF_RE comment.
         definer = None
-        for j in range(i - 1, max(0, i - 4000), -1):
+        for j in range(i - 1, max(0, i - SCAN_WINDOW), -1):
             md = DEF_RE.search(lines[j])
             if md and md.group(2) == sfa_reg:
                 definer = lines[j]

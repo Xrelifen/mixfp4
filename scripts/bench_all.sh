@@ -8,6 +8,15 @@ set -uo pipefail
 WT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MAIN=/home/brian/mixfp4/build
 REPS="${REPS:-3}"
+# Which mixed binary to report. Must be a *patched* build (unpatched computes plain NVFP4).
+MIX="${MIX:-$WT/build/mixed_patched}"
+if [ ! -x "$MIX" ]; then
+  echo "error: no mixed binary at $MIX" >&2
+  echo "       build and patch one first, or set MIX=<path to a patched binary>:" >&2
+  echo "         ./scripts/build_mixed.sh build/mixed_nvfp4_gemm" >&2
+  echo "         python3 scripts/patch_mixed_nvfp4_gemm.py build/mixed_nvfp4_gemm build/mixed_patched" >&2
+  exit 1
+fi
 
 read -r util mem < <(nvidia-smi --query-gpu=utilization.gpu,memory.used --format=csv,noheader,nounits | tr -d ',')
 if [ "$util" -ge 15 ] || [ "$mem" -ge 2000 ]; then
@@ -29,7 +38,7 @@ for sz in "1024 1024 1024" "2048 2048 2048" "4096 4096 4096" "8192 8192 8192" "4
   set -- $sz
   f8=$(best "$MAIN/fp8_gemm" "$@")
   f4=$(best "$MAIN/nvfp4_gemm" "$@")
-  mx=$(best env MIXFP4_SKIP_REF=1 MIXFP4_TAG=random "$WT/build/g32_patched" "$@")
+  mx=$(best env MIXFP4_SKIP_REF=1 MIXFP4_TAG=random "$MIX" "$@")
   python3 -c "
 f8,f4,mx = $f8,$f4,$mx
 name='${1}x${2}x${3}'

@@ -367,7 +367,16 @@ int run(int m, int n, int k, int warmup_iters, int bench_iters) {
   // converged, which is undefined behaviour. Build with -DMIXFP4_DEBUG_UNIFORMITY=1 to catch it.
   constexpr int kAGranuleRows = MIXFP4_A_ATOMS_PER_GRANULE * 16;  // atom M is 16
   constexpr int kBGranuleCols = MIXFP4_B_ATOMS_PER_GRANULE * 8;   // atom N is 8
+  // The C++ path reads the flag once per k_tile (from k_block 0), so K granularity is the whole
+  // k_tile. The generated PTX path dispatches per k_block and publishes its own K granule, which
+  // is 64 -- one mma.sync. Tagging coarser than the kernel reads is always safe; finer is not.
+#if defined(MIXFP4_K_GRANULE)
+  constexpr int kKGranule     = MIXFP4_K_GRANULE;
+#else
   constexpr int kKGranule     = size<2>(ThreadBlockShape{});      // one k_tile
+#endif
+  static_assert(kKGranule > 0 && int(size<2>(ThreadBlockShape{})) % kKGranule == 0,
+                "K granule must divide the CTA tile's K");
 
   TagMode const tag_mode = parse_tag_mode();
   {

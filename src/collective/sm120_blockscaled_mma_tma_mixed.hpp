@@ -85,17 +85,38 @@ using namespace cute;
 #define MIXFP4_B_ATOMS_PER_GRANULE 4
 #endif
 
-// -DMIXFP4_PTX_16X16=1 replaces the C++ pattern dispatch with a single generated inline-PTX
-// statement per k_block: a 64-target brx.idx indexed by the whole flag pattern, then straight-line
-// mma.sync. It reaches the hardware-floor 16x16 granule, which the C++ path cannot -- 64 arms in
-// C++ makes cicc outline the body and spill the accumulators. The granule is fixed by the
-// generator, so pin the tagging macros to match it.
-#if defined(MIXFP4_PTX_16X16) && MIXFP4_PTX_16X16
-#undef MIXFP4_A_ATOMS_PER_GRANULE
-#define MIXFP4_A_ATOMS_PER_GRANULE 1
-#undef MIXFP4_B_ATOMS_PER_GRANULE
-#define MIXFP4_B_ATOMS_PER_GRANULE 2
-#include "collective/mixed_mma_16x16_generated.hpp"
+// -DMIXFP4_PTX=1 replaces the C++ pattern dispatch with generated inline-PTX statements, one per
+// dispatch group per k_block, each opening with a brx.idx over that group's format flags. This is
+// the only path that reaches the hardware floor (16 rows x 8 columns x 64 K), because the C++
+// path's dispatch has to enclose a whole k_tile and its arm count is capped by cicc outlining.
+//
+// It is NOT the fast path: a dispatch inside the k_tile body costs ~90 cycles because it stops
+// ptxas interleaving the next k_block's LDSM loads with this k_block's MMAs. See section 5 of
+// docs/mixed_nvfp4_report.md for the measured curve. Use it when granularity matters more than
+// throughput.
+//
+// The granule is fixed by the generator, so the tagging macros are taken from the generated
+// header rather than restated here.
+#if defined(MIXFP4_PTX_16X16) && MIXFP4_PTX_16X16   // deprecated spelling
+#undef  MIXFP4_PTX
+#define MIXFP4_PTX 1
+#endif
+#if defined(MIXFP4_PTX) && MIXFP4_PTX
+#include "collective/mixed_mma_generated.hpp"
+#undef  MIXFP4_A_ATOMS_PER_GRANULE
+#define MIXFP4_A_ATOMS_PER_GRANULE MIXFP4_GEN_A_ATOMS
+#undef  MIXFP4_B_ATOMS_PER_GRANULE
+#define MIXFP4_B_ATOMS_PER_GRANULE MIXFP4_GEN_B_ATOMS
+#define MIXFP4_K_GRANULE           MIXFP4_GEN_K_GRANULE
+#endif
+
+// -DMIXFP4_BLOB=1 keeps the cheap per-k_tile C++ dispatch but emits each k_block's MMAs as one
+// opaque generated blob (scripts/gen_mixed_mma_blob.py). Fewer inline-asm statements per k_tile
+// body moves cicc's outlining cliff from 8 arms to between 32 and 64, so the cheap dispatch can
+// carry a finer granule -- at K=128, since the dispatch still encloses the whole k_tile. Set
+// -DMIXFP4_A/B_ATOMS_PER_GRANULE to match whatever the generator was run with.
+#if defined(MIXFP4_BLOB) && MIXFP4_BLOB
+#include "collective/mixed_mma_blob_generated.hpp"
 #endif
 
 namespace mixfp4_detail {
@@ -974,45 +995,19 @@ struct CollectiveMma<
     constexpr int kBGran    = kMmaN / kBAtoms;
     constexpr int kNumArms  = 1 << (kAGran + kBGran);
 
-    // One k_block's worth of MMAs, with every atom's format fixed at compile time by `pattern`.
-    //
-    // This open-codes cute::gemm's dispatch [4] rather than calling it, because a single
-    // cute::gemm applies one atom to all of its MMAs and the whole point here is to vary the
-    // atom per sub-block. The traversal is deliberately identical to CuTe's row-major serpentine
-    // (cute/algorithm/gemm.hpp), which exists to maximise operand register reuse between
-    // consecutive MMAs -- reproducing it keeps the .reuse flags ptxas emits unchanged.
-    auto gemm_kblock = [&](auto pattern_c, auto k_block) {
-#if defined(MIXFP4_PTX_16X16) && MIXFP4_PTX_16X16
-      // The generated asm does its own dispatch, so the C++ pattern is unused here.
-      (void) pattern_c;
-      mixfp4::mma_kblock_16x16(accum,
-                               recast<uint32_t>(tCrA(_,_,k_block)),
-                               recast<uint32_t>(tCrB(_,_,k_block)),
-                               recast<uint32_t>(tCrSFA(_,_,k_block)),
-                               recast<uint32_t>(tCrSFB(_,_,k_block)));
-#else
-      constexpr uint32_t kPattern = decltype(pattern_c)::value;
-      auto zipA = make_zip_tensor(tCrA(_,_,k_block), tCrSFA(_,_,k_block));
-      auto zipB = make_zip_tensor(tCrB(_,_,k_block), tCrSFB(_,_,k_block));
-
-      for_each(make_int_sequence<kMmaM>{}, [&](auto mi) {
-        for_each(make_int_sequence<kMmaN>{}, [&](auto ni) {
-          constexpr int m  = decltype(mi)::value;
-          constexpr int n  = decltype(ni)::value;
-          constexpr int ns = (m & 1) ? (kMmaN - 1 - n) : n;   // serpentine coordinate
-          constexpr int site =
-              int(mixfp4_detail::a_flag_of_atom<kAGran, kAAtoms>(kPattern, m)) |
-              (int(mixfp4_detail::b_flag_of_atom<kAGran, kBAtoms>(kPattern, ns)) << 1);
-          cute::gemm(MMA_Atom<SM120_16x8x64_TN_VS_MixedSite<site>>{},
-                     accum(_,m,ns), zipA(_,m), zipB(_,ns), accum(_,m,ns));
-        });
-      });
+#if defined(MIXFP4_PTX) && MIXFP4_PTX
+    // The generated PTX hardcodes the warp's atom counts, so a tile-shape change that the rest of
+    // this file would absorb silently must fail loudly here instead.
+    static_assert(kMmaM == MIXFP4_GEN_MMA_M, "generated PTX was built for a different MMA_M");
+    static_assert(kMmaN == MIXFP4_GEN_MMA_N, "generated PTX was built for a different MMA_N");
 #endif
-    };
 
     // Bit 7 of scale-factor byte 0 of each operand, for the k_block already resident in
     // registers. Every lane of a warp already holds the right value for the whole granule by
     // construction, so no shuffle/broadcast is needed.
+    //
+    // Defined before gemm_kblock because the PTX path calls it there, per k_block, purely for the
+    // uniformity ballot -- that path's real dispatch lives inside the generated asm.
     auto read_site = [&](auto k_block) {
       auto sfa_words = recast<uint32_t>(tCrSFA(_,_,k_block));   // (1, MMA_M)
       auto sfb_words = recast<uint32_t>(tCrSFB(_,_,k_block));   // (1, MMA_N)
@@ -1034,7 +1029,7 @@ struct CollectiveMma<
       // Tagging finer than the granule above makes lanes of one warp disagree here, which sends
       // them down different arms and leaves mma.sync.aligned running partially converged -- that
       // is undefined behaviour, not merely wrong numbers, so it is worth catching loudly while
-      // the host-side tagging is being written. Off by default; costs a ballot per k_tile.
+      // the host-side tagging is being written. Off by default; costs a ballot per dispatch.
 #if defined(MIXFP4_DEBUG_UNIFORMITY) && MIXFP4_DEBUG_UNIFORMITY
       uint32_t const agree = __ballot_sync(0xffffffffu, site == __shfl_sync(0xffffffffu, site, 0));
       if (agree != 0xffffffffu) {
@@ -1045,6 +1040,58 @@ struct CollectiveMma<
       }
 #endif
       return site;
+    };
+
+    // One k_block's worth of MMAs, with every atom's format fixed at compile time by `pattern`.
+    //
+    // This open-codes cute::gemm's dispatch [4] rather than calling it, because a single
+    // cute::gemm applies one atom to all of its MMAs and the whole point here is to vary the
+    // atom per sub-block. The traversal is deliberately identical to CuTe's row-major serpentine
+    // (cute/algorithm/gemm.hpp), which exists to maximise operand register reuse between
+    // consecutive MMAs -- reproducing it keeps the .reuse flags ptxas emits unchanged.
+    auto gemm_kblock = [&](auto pattern_c, auto k_block) {
+#if defined(MIXFP4_PTX) && MIXFP4_PTX
+      // The generated asm does its own dispatch, so the C++ pattern is unused here.
+      (void) pattern_c;
+      // Tagging finer than the granule makes lanes of one warp disagree on the jump index, and
+      // brx.idx.uni with a divergent index is undefined behaviour -- strictly worse than the C++
+      // path's divergent `if`. This path bypasses the k_tile-level read_site(), so the ballot has
+      // to happen here, per k_block, or it never runs at all.
+#if defined(MIXFP4_DEBUG_UNIFORMITY) && MIXFP4_DEBUG_UNIFORMITY
+      (void) read_site(k_block);
+#endif
+      mixfp4::mma_kblock(accum,
+                         recast<uint32_t>(tCrA(_,_,k_block)),
+                         recast<uint32_t>(tCrB(_,_,k_block)),
+                         recast<uint32_t>(tCrSFA(_,_,k_block)),
+                         recast<uint32_t>(tCrSFB(_,_,k_block)));
+#elif defined(MIXFP4_BLOB) && MIXFP4_BLOB
+      // Same per-k_tile C++ dispatch as the default path, but this k_block's MMAs are one opaque
+      // blob, which is what keeps cicc from outlining the body past 8 arms.
+      mixfp4::mma_kblock_blob<decltype(pattern_c)::value>(
+          accum,
+          recast<uint32_t>(tCrA(_,_,k_block)),
+          recast<uint32_t>(tCrB(_,_,k_block)),
+          recast<uint32_t>(tCrSFA(_,_,k_block)),
+          recast<uint32_t>(tCrSFB(_,_,k_block)));
+#else
+      constexpr uint32_t kPattern = decltype(pattern_c)::value;
+      auto zipA = make_zip_tensor(tCrA(_,_,k_block), tCrSFA(_,_,k_block));
+      auto zipB = make_zip_tensor(tCrB(_,_,k_block), tCrSFB(_,_,k_block));
+
+      for_each(make_int_sequence<kMmaM>{}, [&](auto mi) {
+        for_each(make_int_sequence<kMmaN>{}, [&](auto ni) {
+          constexpr int m  = decltype(mi)::value;
+          constexpr int n  = decltype(ni)::value;
+          constexpr int ns = (m & 1) ? (kMmaN - 1 - n) : n;   // serpentine coordinate
+          constexpr int site =
+              int(mixfp4_detail::a_flag_of_atom<kAGran, kAAtoms>(kPattern, m)) |
+              (int(mixfp4_detail::b_flag_of_atom<kAGran, kBAtoms>(kPattern, ns)) << 1);
+          cute::gemm(MMA_Atom<SM120_16x8x64_TN_VS_MixedSite<site>>{},
+                     accum(_,m,ns), zipA(_,m), zipB(_,ns), accum(_,m,ns));
+        });
+      });
+#endif
     };
 
     // One k_tile of the main loop, specialized to a format site. Byte-for-byte the stock
@@ -1104,7 +1151,7 @@ struct CollectiveMma<
     // a same-source A/B rather than against a separately-built binary.
     auto dispatch = [&](auto body) {
 #if (defined(MIXFP4_NO_DISPATCH) && MIXFP4_NO_DISPATCH) || \
-    (defined(MIXFP4_PTX_16X16) && MIXFP4_PTX_16X16)
+    (defined(MIXFP4_PTX) && MIXFP4_PTX)
       // PTX path: the dispatch lives inside the generated asm, so there is exactly one arm here.
       (void) &read_site;
       body(C<0>{});

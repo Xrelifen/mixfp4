@@ -213,53 +213,118 @@ Two things worth reading off this:
 
 ## 5. Granularity, and what it costs
 
-Arms are specialized on the full flag pattern across a warp's footprint, so the arm count grows as
-`2^(A granules) × 2^(B granules)`. Measured at 4096³:
+The hardware floor is the footprint of one `mma.sync`: because the atom is `m16n8k64`, a format
+granule can never be finer than **16 rows of A × 8 columns of B × 64 elements of K**. The kernel
+now reaches that floor and is numerically correct there. It is not free, and the rest of this
+section is about what it costs and why.
 
-| granule (A rows × B cols × K) | arms | OMMAs | codegen | TFLOP/s |
+### The measured curve
+
+4096³, best of 5 on an idle RTX 5090, randomly tagged so all four format sites are live. Stock
+NVFP4 is 1207.1 TFLOP/s; "no dispatch" is the same source with `-DMIXFP4_NO_DISPATCH=1`.
+
+| granule (A rows × B cols × K) | dispatch | arms | OMMAs | codegen | TFLOP/s | vs stock |
+|---|---|---|---|---|---|---|
+| — (no dispatch) | none | 1 | 64 | clean | 1189.4 | +1.5% |
+| **32 × 32 × 128 (default)** | C++, per k_tile | 8 | 512 | clean | **1166.5** | **+3.3%** |
+| 16 × 64 × 128 | C++, per k_tile | 8 | 512 | clean | 1163.9 | +3.6% |
+| 16 × 32 × 128 | C++ + blob | 16 | 1024 | clean | 1116.3 | +7.5% |
+| 32 × 16 × 128 | C++ + blob | 32 | 2048 | clean | 1084.2 | +10.2% |
+| 16 × 16 × 64 | PTX, per k_block | 64 | 4096 | clean | 865.2 | +28.3% |
+| **16 × 8 × 64 (the floor)** | PTX, per k_block ×2 | 64×2 | 4096 | clean | *see below* | |
+
+Two separate cost mechanisms are at work, and separating them is what the rest of this section
+does. Above the line, cost grows with **arm count** (code footprint). Below it, cost is dominated
+by **where the dispatch sits**.
+
+### Where the dispatch sits is worth ~90 cycles
+
+A dispatch placed *inside* the k_tile body costs about 90 cycles; one that encloses the whole
+k_tile costs about 2.4 cycles per branch level. That is a 20–40× difference for the same decision,
+and it is **not** the branch opcode. Three measurements pin it down, all at 4096³:
+
+| variant | TFLOP/s | what it isolates |
+|---|---|---|
+| 16 MMAs in one opaque `asm volatile`, **no dispatch** | 1189.9 | the opaque blob itself is **free** — identical to the no-dispatch ceiling |
+| `brx.idx` with the index computed **inside** the asm | 944.6 | ~90 cycles per dispatch |
+| `brx.idx` with the index **hoisted** into C++ | 962.2 | +18 only, so it is not the `bfe`/`mad` → `LDC` dependency chain |
+| balanced `bra` tree instead of `brx.idx` | 915.5 | direct branches are *worse*, so it is not the indirect jump |
+
+(All four at `MIXFP4_TAG=none`, which pins every dispatch to arm 0 and so removes the code-footprint
+term.) What is left is that a branch inside the loop body is a **scheduling barrier**: ptxas can no
+longer interleave the next k_block's `LDSM` shared-memory loads with this k_block's MMAs, so the
+shared-memory latency stops being hidden. That is why the per-k_tile C++ dispatch costs 3.3% for
+the same decision that costs 28% per k_block.
+
+The consequence for granularity is structural: **a K granule of 64 requires a dispatch per k_block
+and therefore costs ≥20%, however the branch is spelled.** K=128 keeps the dispatch outside the
+body, and then the binding constraint is arm count instead.
+
+One aside worth recording, because it contradicts an earlier note here: the `bra` tree only stays
+un-if-converted if each arm contains something ptxas will not speculate. A single
+`bar.warp.sync -1` per arm is enough — without it, 512 of 4096 OMMAs come back predicated; with
+it, zero do, and the branch is a plain `BRA`. The poison is nearly free; the tree is still slower
+than `brx.idx`.
+
+### The 8-arm cliff moves — it was statement count, not code size
+
+This report previously recorded a hard cliff between 8 and 16 arms that "resists the obvious
+levers" (`-inline-threshold`, `always_inline`, halving the code). That was right about those
+levers and wrong about the cause. The trigger is not how much code cicc sees but **how many
+inline-asm statements** it sees: emitting a k_block's 16 MMAs as one opaque blob instead of 16
+separate `cute::gemm` statements takes a k_tile body from 32 statements to 2, and the cliff moves
+from 8 arms to somewhere between 32 and 64.
+
+| arms | granule | C++ + `cute::gemm` | C++ + blob (`scripts/gen_mixed_mma_blob.py`) |
+|---|---|---|---|
+| 8 | 32×32×128 | clean, 1166.5 | clean |
+| 16 | 16×32×128 | `STACK:912`, **36.7** | clean, `STACK:0`, **1116.3** |
+| 32 | 32×16×128 | (not reached) | clean, `STACK:0`, **1084.2** |
+| 64 | 16×16×128 | (not reached) | `STACK:864`, outlined |
+
+So the arm budget for the *cheap* dispatch is 4× larger than recorded. Throughput still falls with
+arm count — that is the code-footprint term — so 16 and 32 arms cost 7.5% and 10.2% rather than
+3.3%. `gen_mixed_mma_blob.py` refuses to emit past 32 arms rather than silently producing the
+outlined build.
+
+### Reaching the floor: split jump tables
+
+At the floor a warp's k_block carries 2 A flags + 8 B flags = 10 bits, so a single table indexed
+by the whole pattern would be 1024 arms × 16 MMAs = 16,384 `mma.sync` in one asm statement. Instead
+`scripts/gen_mixed_mma_ptx.py` partitions the warp's `MMA_M × MMA_N` atom grid into groups and
+gives each group its own `brx.idx` over only the flags its own MMAs need — trading one extra
+indirect branch per group against an exponential reduction in code:
+
+| group (atoms) | groups | bits | arms/group | OMMAs in kernel |
 |---|---|---|---|---|
-| 32 × 64 × 128 | 4 | 256 | clean | 1184.8 |
-| **32 × 32 × 128 (default)** | **8** | **512** | **clean** | **1165.9** |
-| **16 × 64 × 128** | **8** | **512** | **clean** | **1163.9** |
-| 16 × 32 × 128 | 16 | 1024 | `CALL.REL.NOINC`, `STACK:912` | 36.7 |
-| 16 × 16 × 128 | 64 | 4096 | `CALL.REL.NOINC`, `STACK:912` | 32.3 |
+| 2×8 | 1 | 10 | 1024 | 65536 — not buildable |
+| 2×4 | 2 | 6 | 64 | 4096 |
+| 2×2 | 4 | 4 | 16 | 1024 |
+| 1×2 | 8 | 3 | 8 | 512 |
 
-Note the third row: **A can be taken all the way to its hardware floor of 16 rows at full speed**,
-provided B stays at 64 columns. The 8-arm budget can be spent on either operand. If a quantization
-scheme needs fine row/channel granularity on A and tolerates coarse column granularity on B (a
-common shape), that is available today with `-DMIXFP4_A_ATOMS_PER_GRANULE=1
--DMIXFP4_B_ATOMS_PER_GRANULE=8`. What the budget cannot buy is *both* at once.
+Every configuration above is numerically correct (all four sites, random per-granule tagging, at
+256³/512³/1024³/2048³ and 1024×2048×512) with `REG:168`, `STACK:0`, zero predicated OMMAs and an
+exact 4-way per-site OMMA census. Because each group's A-flag and B-flag occupy disjoint,
+independently varying bits of its pattern, every MMA sees each of the four sites in exactly
+2^(bits−2) of the arms, so the patcher's equal-count invariant holds by construction.
 
-**There is a hard cliff between 8 and 16 arms.** Past it, cicc stops inlining the specialized body
-and outlines it into a real ABI function call, spilling the accumulators to a 912-byte stack frame
-— the same failure mode as the original `noinline` experiment.
+### What this means for the 5%-of-stock budget
 
-The cliff is not a simple code-size threshold, and it resists the obvious levers:
+Stock NVFP4 runs a 4096³ k_tile in about 720 warp-scheduler cycles, so a 5% budget is ~36 cycles
+per k_tile — roughly 1.6 OMMA issue slots. The shipped 8-arm default spends about 14 of those on 3
+bits of format selection. That is the real currency: **at 5% you can afford about 3 bits of format
+choice per k_tile**, and every extra bit doubles the code. The floor needs 10 bits at K=128, or 20
+at K=64.
 
-- `-Xcicc -inline-threshold=2000000`: no effect (targets the inliner; this is a different pass).
-- `__attribute__((always_inline))` on the specialized body: no effect, byte-identical output.
-- Halving the code by merging the main and tail loop bodies into one with a runtime `is_last`:
-  cut OMMAs from 512 to **256** and it outlined *anyway* (`CALL=3`, `STACK:1040`, 38.7 TFLOP/s).
-  Removing the intermediate wrapper lambda via variadic forwarding changed nothing. Introducing a
-  single runtime branch into the specialized body was enough to flip the decision at *half* the
-  code size.
+So the granule ladder, by budget:
 
-Editing the generated PTX does not help either. In the outlined build the call passes **pointers
-into a `__local_depot0[912]`** (`add.u64 %rd142, %SP, 464` feeding `st.param`), so the captured
-state — accumulators included — is already in local memory before ptxas ever runs. Splicing the
-callee back in removes the `CALL` but not the memory traffic; undoing that needs
-memory-to-register promotion, not a text edit. And ptxas demonstrably will not do it: the PTX has
-136 `st.local` / 28 `ld.local` and the resulting SASS still contains 117 `LDL`/`STL`.
-
-The 16×16 configuration is **numerically correct** (it passes the full random-tagging test) but
-36× slower, so it is not usable.
-
-**So 32 rows × 32 columns × 128 K is the finest symmetric granule that survives**, and it is the
-default. Note also that 16×16 is the hardware floor regardless of the compiler, because the atom
-is `m16n8k64` — A can never go below 16 rows.
+- **≤5% (shippable today):** 32×32×128 or 16×64×128 — 3 bits, 8 arms. Unchanged.
+- **7–11%:** 16×32×128 or 32×16×128 — 4–5 bits, via the blob path. New.
+- **≥28%:** anything with K=64, including the 16×8×64 floor — the per-k_block dispatch dominates.
 
 Configurable via `-DMIXFP4_A_ATOMS_PER_GRANULE` / `-DMIXFP4_B_ATOMS_PER_GRANULE` (in atoms; A
-atoms are 16 rows, B atoms 8 columns).
+atoms are 16 rows, B atoms 8 columns) for the C++ paths, or by regenerating the header for the
+blob and PTX paths.
 
 ---
 
@@ -277,11 +342,32 @@ python3 scripts/patch_mixed_nvfp4_gemm.py build/mixed_nvfp4_gemm build/mixed_pat
 MIXFP4_TAG=none|a|b|all ./build/mixed_patched 1024 1024 1024
 MIXFP4_SKIP_REF=1 ./build/mixed_patched 8192 8192 8192   # skip the O(M*N*K) host reference
 
-./scripts/bench_all.sh                        # the table in section 4
+MIX=build/mixed_patched ./scripts/bench_all.sh   # the table in section 4
+./scripts/sweep.sh                              # the granularity curve in section 5
 ```
 
-Build-time options: `-DMIXFP4_DEBUG_UNIFORMITY=1` (catch tagging finer than a granule),
-`-DMIXFP4_NO_DISPATCH=1` (compile the dispatch out — the in-source performance ceiling).
+Finer granules than the 8-arm default need a generated header. Both generators print the
+granule, the arm count and the per-site OMMA count the patcher should report, so a mismatch is
+caught before the GPU is involved:
+
+```bash
+# K=128, cheap per-k_tile dispatch, up to 32 arms  (section 5, "the cliff moves")
+A_ATOMS=1 B_ATOMS=4 python3 scripts/gen_mixed_mma_blob.py       # 16 x 32 x 128
+EXTRA="-DMIXFP4_BLOB=1 -DMIXFP4_A_ATOMS_PER_GRANULE=1 -DMIXFP4_B_ATOMS_PER_GRANULE=4" \
+  ./scripts/build_mixed.sh build/blob16
+
+# K=64, down to the hardware floor, at the per-k_block dispatch cost
+python3 scripts/gen_mixed_mma_ptx.py --a-atoms 1 --b-atoms 1 --m-per-group 2 --n-per-group 2
+EXTRA="-DMIXFP4_PTX=1" ./scripts/build_mixed.sh build/floor          # 16 x 8 x 64
+```
+
+The granule macros are taken *from* the generated header on the PTX path, so the host-side tagging
+follows automatically — including the K granule, which is 64 there and 128 on the C++ paths.
+
+Build-time options: `-DMIXFP4_DEBUG_UNIFORMITY=1` (catch tagging finer than a granule — it now
+runs on the PTX path too, per k_block), `-DMIXFP4_NO_DISPATCH=1` (compile the dispatch out — the
+in-source performance ceiling), `-DMIXFP4_PTX=1`, `-DMIXFP4_BLOB=1`. `-DMIXFP4_PTX_16X16=1` is a
+deprecated alias for `-DMIXFP4_PTX=1`; what it builds is now whatever the generated header holds.
 
 ---
 
@@ -291,12 +377,19 @@ Build-time options: `-DMIXFP4_DEBUG_UNIFORMITY=1` (catch tagging finer than a gr
 - **The format tag consumes bit 7 of every UE4M3 scale byte.** Architecturally ignored by the
   tensor core (verified on hardware in `tests/mma_intrinsics`), so it costs no storage or
   bandwidth — but it is not free if some other consumer of those scale factors reads that bit.
-- **The granule is not a contiguous tile** (section 3B). Host-side quantization must respect the
-  strided shape, and violating it below atom granularity hangs the GPU rather than returning wrong
-  numbers.
+- **The granule is generally not a contiguous tile** (section 3B). Host-side quantization must
+  respect the strided shape, and violating it below atom granularity hangs the GPU rather than
+  returning wrong numbers. At the hardware floor it happens to *become* contiguous — one n-atom is
+  8 adjacent columns and one m-atom is 16 adjacent rows — but that is a property of that one
+  configuration, not something to rely on.
 - **The granule is tied to the tile shape and warp layout.** Change `ThreadBlockShape` or the
   AtomLayout and the granule changes with it; the map is derived automatically, but the *arm
-  count* — and therefore the cliff in section 5 — must be rechecked.
+  count* — and therefore the cliff in section 5 — must be rechecked. The PTX path additionally
+  hardcodes the warp's atom counts in generated code, and `static_assert`s them against the tile.
+- **Fine granularity and throughput are in direct conflict, and the exchange rate is steep**
+  (section 5): about 3 bits of format choice per k_tile fit in a 5% budget, and each extra bit
+  doubles the code. The 16×8×64 floor is correct and available but costs ~28% or more, because
+  a K granule of 64 forces a dispatch inside the k_tile body.
 - Only `ue4m3` scale factors are exercised. `ue8m0` and `scale_vec::2X` are untested here (the
   latter has a known pre-existing E0M3 hardware limitation, unrelated to this work).
 - E0M3 semantics rest on an undocumented, patched instruction encoding. It is validated
