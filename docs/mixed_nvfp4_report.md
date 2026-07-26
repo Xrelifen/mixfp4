@@ -191,13 +191,36 @@ Arms are specialized on the full flag pattern across a warp's footprint, so the 
 |---|---|---|---|---|
 | 32 × 64 × 128 | 4 | 256 | clean | 1184.8 |
 | **32 × 32 × 128 (default)** | **8** | **512** | **clean** | **1165.9** |
+| **16 × 64 × 128** | **8** | **512** | **clean** | **1163.9** |
 | 16 × 32 × 128 | 16 | 1024 | `CALL.REL.NOINC`, `STACK:912` | 36.7 |
 | 16 × 16 × 128 | 64 | 4096 | `CALL.REL.NOINC`, `STACK:912` | 32.3 |
 
+Note the third row: **A can be taken all the way to its hardware floor of 16 rows at full speed**,
+provided B stays at 64 columns. The 8-arm budget can be spent on either operand. If a quantization
+scheme needs fine row/channel granularity on A and tolerates coarse column granularity on B (a
+common shape), that is available today with `-DMIXFP4_A_ATOMS_PER_GRANULE=1
+-DMIXFP4_B_ATOMS_PER_GRANULE=8`. What the budget cannot buy is *both* at once.
+
 **There is a hard cliff between 8 and 16 arms.** Past it, cicc stops inlining the specialized body
 and outlines it into a real ABI function call, spilling the accumulators to a 912-byte stack frame
-— the same failure mode as the original `noinline` experiment. `-Xcicc -inline-threshold=2000000`
-does not move it.
+— the same failure mode as the original `noinline` experiment.
+
+The cliff is not a simple code-size threshold, and it resists the obvious levers:
+
+- `-Xcicc -inline-threshold=2000000`: no effect (targets the inliner; this is a different pass).
+- `__attribute__((always_inline))` on the specialized body: no effect, byte-identical output.
+- Halving the code by merging the main and tail loop bodies into one with a runtime `is_last`:
+  cut OMMAs from 512 to **256** and it outlined *anyway* (`CALL=3`, `STACK:1040`, 38.7 TFLOP/s).
+  Removing the intermediate wrapper lambda via variadic forwarding changed nothing. Introducing a
+  single runtime branch into the specialized body was enough to flip the decision at *half* the
+  code size.
+
+Editing the generated PTX does not help either. In the outlined build the call passes **pointers
+into a `__local_depot0[912]`** (`add.u64 %rd142, %SP, 464` feeding `st.param`), so the captured
+state — accumulators included — is already in local memory before ptxas ever runs. Splicing the
+callee back in removes the `CALL` but not the memory traffic; undoing that needs
+memory-to-register promotion, not a text edit. And ptxas demonstrably will not do it: the PTX has
+136 `st.local` / 28 `ld.local` and the resulting SASS still contains 117 `LDL`/`STL`.
 
 The 16×16 configuration is **numerically correct** (it passes the full random-tagging test) but
 36× slower, so it is not usable.
