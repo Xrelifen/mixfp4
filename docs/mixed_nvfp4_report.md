@@ -230,8 +230,15 @@ NVFP4 is 1207.1 TFLOP/s; "no dispatch" is the same source with `-DMIXFP4_NO_DISP
 | 16 × 64 × 128 | C++, per k_tile | 8 | 512 | clean | 1163.9 | +3.6% |
 | 16 × 32 × 128 | C++ + blob | 16 | 1024 | clean | 1116.3 | +7.5% |
 | 32 × 16 × 128 | C++ + blob | 32 | 2048 | clean | 1084.2 | +10.2% |
-| 16 × 16 × 64 | PTX, per k_block | 64 | 4096 | clean | 865.2 | +28.3% |
-| **16 × 8 × 64 (the floor)** | PTX, per k_block ×2 | 64×2 | 4096 | clean | *see below* | |
+| 16 × 16 × 64 | PTX, 1 per k_block | 64 | 4096 | clean | 865.2 | +28.3% |
+| **16 × 8 × 64 (the floor)** | PTX, 4 per k_block | 4 × 16 | 1024 | clean | not yet measured | ≥ +28% |
+
+The floor's own throughput is still outstanding: the GPU was taken by another process partway
+through the sweep, and under contention every number is meaningless (stock itself read 725 instead
+of 1207, and the dispatch-free ceiling read *above* stock, inverting a known 1.5% gap). The
+`≥ +28%` is a bound, not a measurement: the 16×16×64 row already costs 28.3% with **one** dispatch
+per k_block, and the floor needs four, so it cannot be cheaper. Re-run `./scripts/sweep.sh` on an
+idle card to fill this in.
 
 Two separate cost mechanisms are at work, and separating them is what the rest of this section
 does. Above the line, cost grows with **arm count** (code footprint). Below it, cost is dominated
@@ -321,6 +328,9 @@ So the granule ladder, by budget:
 - **≤5% (shippable today):** 32×32×128 or 16×64×128 — 3 bits, 8 arms. Unchanged.
 - **7–11%:** 16×32×128 or 32×16×128 — 4–5 bits, via the blob path. New.
 - **≥28%:** anything with K=64, including the 16×8×64 floor — the per-k_block dispatch dominates.
+
+The floor is therefore available and correct, but it is a granularity-first option, not a
+throughput-competitive one. Nothing beats the existing 8-arm configurations inside a 5% budget.
 
 Configurable via `-DMIXFP4_A_ATOMS_PER_GRANULE` / `-DMIXFP4_B_ATOMS_PER_GRANULE` (in atoms; A
 atoms are 16 rows, B atoms 8 columns) for the C++ paths, or by regenerating the header for the
