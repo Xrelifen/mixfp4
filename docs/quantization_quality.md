@@ -362,6 +362,40 @@ quantisation time is a constraint.
 | mixed E2M1/E0M3 | 14.496 | 13.4% | 14.409 | 16.8% | 14.403 | 17.1% |
 | **mixed + 4/6** | 14.485 | 13.8% | **14.341** | **19.5%** | 14.366 | 18.5% |
 
+### The same grids under W4A16, for contrast
+
+Same models, same windows, weights only.
+
+**OPT-125m** — fp16 27.656, NVFP4 RTN 29.151 (+1.495)
+
+| candidates per group | RTN ppl | recov | search ppl | recov | HQQ ppl | recov |
+|---|---|---|---|---|---|---|
+| E2M1@6 — plain NVFP4 | 29.151 | 0.0% | 29.011 | 9.4% | **28.830** | **21.4%** |
+| E2M1@4 — *all* blocks | 29.513 | −24.2% | 29.410 | −17.3% | 29.403 | −16.8% |
+| E0M3 — *all* blocks | 29.659 | −34.0% | 29.607 | −30.5% | 29.412 | −17.5% |
+| 4/6 adaptive | 29.149 | 0.1% | 28.877 | 18.3% | 28.930 | 14.8% |
+| mixed E2M1/E0M3 | 29.274 | −8.2% | 29.113 | 2.5% | 29.017 | 9.0% |
+| mixed + 4/6 | 29.248 | −6.5% | 29.190 | −2.6% | 28.995 | 10.4% |
+
+**Qwen2.5-0.5B** — fp16 12.293, NVFP4 RTN 13.511 (+1.218)
+
+| candidates per group | RTN ppl | recov | search ppl | recov | HQQ ppl | recov |
+|---|---|---|---|---|---|---|
+| E2M1@6 — plain NVFP4 | 13.511 | 0.0% | 13.351 | 13.1% | 13.333 | 14.6% |
+| E2M1@4 — *all* blocks | 13.832 | −26.4% | 13.606 | −7.8% | 13.950 | −36.0% |
+| E0M3 — *all* blocks | 13.712 | −16.5% | 13.802 | −23.9% | 13.764 | −20.8% |
+| 4/6 adaptive | 13.476 | 2.8% | 13.324 | 15.3% | 13.383 | 10.5% |
+| mixed E2M1/E0M3 | 13.385 | 10.3% | 13.320 | 15.7% | 13.329 | 14.9% |
+| **mixed + 4/6** | 13.416 | 7.8% | **13.277** | **19.2%** | 13.278 | 19.1% |
+
+The regime dependence is stark. On OPT under W4A16 the winner is **plain NVFP4 with a better
+optimiser** (21.4%) — no per-group choice at all beats every adaptive policy, and `mixed` is
+actively harmful under RTN. Under W4A4 on the same model, every adaptive policy wins and
+`mixed + 4/6` takes the top cell. Qwen is less dramatic but points the same way.
+
+That is the strongest reason to treat W4A4 as the regime of record: the two disagree about which
+method to *use*, not merely by how much.
+
 ### Across both grids
 
 **`mixed + 4/6` is the best policy on both models** — the top cell of each grid is one of its rows.

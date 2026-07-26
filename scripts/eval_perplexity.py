@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
-"""Wikitext-2 perplexity for mixfp4 against NVFP4 and an fp16 baseline.
+"""Perplexity for mixfp4 against NVFP4 and an fp16 baseline, on wikitext-2 or C4.
 
-    python scripts/eval_perplexity.py --model facebook/opt-125m
-    python scripts/eval_perplexity.py --model Qwen/Qwen2.5-0.5B --seqlen 2048 \
-        --configs fp16 nvfp4-rtn mixed-rtn mixed-hqq
+    python scripts/eval_perplexity.py --model facebook/opt-125m                   # W4A16
+    python scripts/eval_perplexity.py --model Qwen/Qwen2.5-0.5B --activations match  # W4A4
+    python scripts/eval_perplexity.py --model meta-llama/Llama-3.1-8B --dataset c4
 
-The default backend is ``simulated``: each weight is round-tripped through the format
-(quantise then dequantise) and the matmul still runs in fp16.  That isolates *what the format
-costs in accuracy* from *which kernel runs the matmul*, which is what a format comparison should
-measure -- and it means these numbers are equally valid for the CUDA backend, which computes the
-same arithmetic on the tensor core.
+Quantisation is **simulated**: each weight is round-tripped through the format (quantise then
+dequantise) and the matmul still runs in fp16.  That isolates *what the format costs in accuracy*
+from *which kernel runs the matmul*, which is what a format comparison should measure -- and it
+means these numbers are equally valid for the CUDA backend, which computes the same arithmetic on
+the tensor core.  It is also what GPTQ, AWQ and Four Over Six do for their accuracy tables.
 
-``--backend triton`` instead swaps in real :class:`MixFP4Linear` layers, so the same table also
-serves as an end-to-end check that the kernels reproduce the simulated result.
+Note that the Triton kernels in ``python/mixfp4/triton_kernels/`` are **not** exercised here --
+every number below comes from simulated quantisation. Closing that loop is an open item; see
+``docs/quant_study_plan.md``.
 
 The comparison that matters is ``nvfp4-rtn`` (ordinary NVFP4: every group E2M1, round to nearest)
 against the ``mixed-*`` rows.  Same group size, same scale recipe, same everything except the
@@ -64,6 +65,55 @@ CONFIGS.update({f"{pol}-{meth}": (POLICIES[pol], METHODS[meth])
                 for pol in POLICIES for meth in METHODS})
 
 DEFAULT_CONFIGS = ["fp16"] + [f"{pol}-{meth}" for pol in POLICIES for meth in METHODS]
+
+
+def _find_c4_arrow():
+    """Locate a cached ``c4-validation.arrow``.
+
+    C4's loader reproduces its cache key from the exact ``data_files`` spec that created it, and
+    that spec is not recoverable after the fact -- ``load_dataset("allenai/c4", "en", ...)`` fails
+    against a cache built any other way.  The shard is a plain arrow file, so read it directly.
+    """
+    import os
+    from pathlib import Path
+
+    roots = [os.environ.get("HF_DATASETS_CACHE"), os.environ.get("HF_HOME"),
+             str(Path.home() / ".cache" / "huggingface"), "/mnt/disk1/share/huggingface"]
+    for root in filter(None, dict.fromkeys(roots)):
+        base = Path(root)
+        for candidate in (base / "datasets", base):
+            if not candidate.is_dir():
+                continue
+            hits = sorted(candidate.glob("allenai___c4/*/*/*/c4-validation.arrow"))
+            if hits:
+                return hits[0]
+    return None
+
+
+def load_eval_text(dataset: str) -> str:
+    """Return the evaluation corpus as one string, ready to tokenise.
+
+    ``wikitext2`` is the usual wikitext-2-raw-v1 test split.  ``c4`` is the standard held-out
+    alternative reported alongside it in the quantisation literature -- web text rather than
+    curated encyclopaedia prose, so it exercises a different part of the distribution.
+    """
+    from datasets import Dataset, load_dataset
+
+    if dataset == "wikitext2":
+        rows = load_dataset("wikitext", "wikitext-2-raw-v1", split="test")
+        return "\n\n".join(rows["text"])
+
+    if dataset == "c4":
+        local = _find_c4_arrow()
+        if local is not None:
+            rows = Dataset.from_file(str(local))
+        else:
+            rows = load_dataset("allenai/c4", data_files={
+                "validation": "en/c4-validation.00000-of-00008.json.gz"}, split="validation")
+        # 3000 documents is comfortably more text than any window count used here.
+        return "\n\n".join(rows[i]["text"] for i in range(min(3000, len(rows))))
+
+    raise ValueError(f"unknown dataset {dataset!r}; choose wikitext2 or c4")
 
 
 def quantizable_layers(model, skip: tuple[str, ...]):
@@ -174,6 +224,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--model", default="facebook/opt-125m")
+    ap.add_argument("--dataset", default="wikitext2", choices=["wikitext2", "c4"])
     ap.add_argument("--seqlen", type=int, default=2048)
     ap.add_argument("--limit", type=int, default=None,
                     help="evaluate at most this many windows (for a quick smoke run)")
@@ -205,20 +256,19 @@ def main() -> int:
     SKIP = tuple(args.skip_modules)
 
     from transformers import AutoModelForCausalLM, AutoTokenizer
-    from datasets import load_dataset
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = getattr(torch, args.dtype)
 
     print(f"model    : {args.model}")
+    print(f"dataset  : {args.dataset}")
     print(f"device   : {device}  dtype: {args.dtype}  seqlen: {args.seqlen}")
     print(f"methods  : {available_methods()}")
 
     tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=True)
     model = AutoModelForCausalLM.from_pretrained(args.model, dtype=dtype).to(device).eval()
 
-    test = load_dataset("wikitext", "wikitext-2-raw-v1", split="test")
-    input_ids = tokenizer("\n\n".join(test["text"]), return_tensors="pt").input_ids
+    input_ids = tokenizer(load_eval_text(args.dataset), return_tensors="pt").input_ids
     print(f"tokens   : {input_ids.numel()}  windows: {input_ids.numel() // args.seqlen}")
 
     layers = list(quantizable_layers(model, SKIP))
@@ -300,7 +350,8 @@ def main() -> int:
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)
         args.json.write_text(json.dumps(
-            {"model": args.model, "seqlen": args.seqlen, "dtype": args.dtype,
+            {"model": args.model, "dataset": args.dataset,
+             "seqlen": args.seqlen, "dtype": args.dtype,
              "granule": [args.granule_n, args.granule_k], "select_p": args.select_p,
              "activations": args.activations, "act_method": args.act_method,
              "results": results}, indent=1))
