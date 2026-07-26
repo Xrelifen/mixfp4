@@ -32,6 +32,11 @@ import torch
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "python"))
 
+from mixfp4.activation import (  # noqa: E402
+    activation_config,
+    install_activation_quantizers,
+    remove_activation_quantizers,
+)
 from mixfp4.codebook import GROUP_SIZE  # noqa: E402
 from mixfp4.quant import quantize_dequantize, quantize_mixfp4  # noqa: E402
 from mixfp4.quantizers import QuantConfig, available_methods  # noqa: E402
@@ -179,6 +184,13 @@ def main() -> int:
     ap.add_argument("--hqq-iters", type=int, default=20)
     ap.add_argument("--select-p", type=float, default=2.0,
                     help="exponent of the candidate-selection error norm; 2=MSE, 1=MAE, inf=worst")
+    ap.add_argument("--activations", default="none",
+                    help="activation format policy: 'none' for W4A16; 'match' to use each row's "
+                         "own weight policy; or a fixed policy (nvfp4 / nvfp4-46 / mixed / "
+                         "mixed-46) held constant so the weight format is isolated")
+    ap.add_argument("--act-method", default="rtn",
+                    help="fitting method for activations; anything beyond rtn is a research "
+                         "probe, since activations are quantised per forward pass")
     ap.add_argument("--dtype", default="float16", choices=["float16", "bfloat16", "float32"])
     ap.add_argument("--logit-chunk", type=int, default=512,
                     help="positions per logit slice; lower it if the vocabulary is large")
@@ -216,7 +228,15 @@ def main() -> int:
     cfg_kwargs = dict(granule_n=args.granule_n, granule_k=args.granule_k,
                       iters=args.hqq_iters, p=args.select_p)
 
+    if args.activations == "none":
+        print("activations: none -> W4A16 (weight-only)\n")
+    elif args.activations == "match":
+        print(f"activations: same policy as the weights, method {args.act_method} -> W4A4\n")
+    else:
+        print(f"activations: {args.activations} / {args.act_method} -> W4A4\n")
+
     results = {}
+    modules = [m for _, m, _ in layers]
     for name in args.configs:
         spec = CONFIGS[name]
         start = time.time()
@@ -228,12 +248,27 @@ def main() -> int:
             share = apply_quantization(model, originals, policy, method, cfg_kwargs, device)
         quant_s = time.time() - start
 
+        # "match" ties the activation policy to the weight policy, which is how Four Over Six is
+        # actually meant to be used -- its Figure 3 applies Q(4/6) to activations as well.  A fixed
+        # policy instead holds activations constant, isolating the weight format's contribution.
+        act_policy = args.activations
+        if act_policy == "match":
+            act_policy = spec[0] if spec is not None else "nvfp4"
+        act_handles = []
+        if args.activations != "none":
+            act_handles = install_activation_quantizers(modules, activation_config(
+                QuantConfig(granule_n=1, granule_k=1, iters=args.hqq_iters, p=args.select_p),
+                format_policy=act_policy, method=args.act_method))
+
         start = time.time()
         ppl, windows = perplexity(model, input_ids, args.seqlen, device, args.limit,
                                   args.logit_chunk)
+        remove_activation_quantizers(act_handles)
         results[name] = {"ppl": ppl, "e0m3_share": share,
                          "quantise_s": quant_s, "eval_s": time.time() - start}
         extra = f"  e0m3 {share:.1%}" if share is not None else ""
+        if spec is None and args.activations != "none":
+            extra += "  (activations still quantised: this row is W16A4)"
         print(f"{name:14s} ppl {ppl:8.4f}   ({quant_s:5.1f}s quant, "
               f"{results[name]['eval_s']:5.1f}s eval, {windows} windows){extra}")
 
@@ -256,7 +291,9 @@ def main() -> int:
         args.json.parent.mkdir(parents=True, exist_ok=True)
         args.json.write_text(json.dumps(
             {"model": args.model, "seqlen": args.seqlen, "dtype": args.dtype,
-             "granule": [args.granule_n, args.granule_k], "results": results}, indent=1))
+             "granule": [args.granule_n, args.granule_k], "select_p": args.select_p,
+             "activations": args.activations, "act_method": args.act_method,
+             "results": results}, indent=1))
         print(f"\nwrote {args.json}")
     return 0
 

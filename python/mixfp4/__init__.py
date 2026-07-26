@@ -15,6 +15,12 @@ See ``docs/quantization_quality.md`` for whether mixing is worth it (yes, modest
 cannot reach the E0M3 tensor core and decodes in registers instead.
 """
 
+from .activation import (
+    ActivationQuantizer,
+    activation_config,
+    install_activation_quantizers,
+    remove_activation_quantizers,
+)
 from .codebook import (
     E0M3_CODEBOOK,
     E2M1_CODEBOOK,
@@ -31,10 +37,12 @@ from .quant import (
     quantization_error,
     quantize_dequantize,
     quantize_mixfp4,
+    simulate_quantization,
 )
 from .quantizers import QuantConfig, available_methods, register
 
 __all__ = [
+    "ActivationQuantizer",
     "E0M3_CODEBOOK",
     "E2M1_CODEBOOK",
     "FLAG_MASK",
@@ -54,4 +62,8 @@ __all__ = [
     "quantize_dequantize",
     "quantize_mixfp4",
     "register",
+    "simulate_quantization",
+    "activation_config",
+    "install_activation_quantizers",
+    "remove_activation_quantizers",
 ]

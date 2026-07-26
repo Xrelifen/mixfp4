@@ -209,6 +209,64 @@ def test_all_policies_round_trip():
             assert rel < 0.5, f"{policy}/{method}: implausible relative error {rel:.3f}"
 
 
+def test_activation_path_matches_weight_path():
+    """Quantising without packing must be bit-identical to quantising, packing and unpacking.
+
+    The activation path skips the nibble packing because activations are discarded within one
+    matmul, but it must not skip anything else -- notably the UE4M3 rounding of the per-group
+    scale.  Simulating NVFP4 without that rounding would flatter it.
+    """
+    from mixfp4.quant import simulate_quantization
+    from mixfp4.quantizers import QuantConfig
+
+    torch.manual_seed(0)
+    x = torch.randn(128, 512, device=DEVICE)
+    for policy in ("nvfp4", "mixed", "nvfp4-46", "mixed-46"):
+        cfg = QuantConfig(method="rtn", format_policy=policy)
+        direct = simulate_quantization(x, cfg)
+        packed = dequantize_mixfp4(quantize_mixfp4(x, format_policy=policy, method="rtn"))
+        assert torch.equal(direct, packed.to(DEVICE)), \
+            f"{policy}: activation path diverged from the weight path"
+
+
+def test_activation_quantizer_preserves_shape_and_dtype():
+    from mixfp4.activation import ActivationQuantizer
+    from mixfp4.quantizers import QuantConfig
+
+    quantizer = ActivationQuantizer(QuantConfig(method="rtn", format_policy="nvfp4"))
+    for shape in [(8, 512), (2, 7, 512), (1, 1, 256)]:
+        for dtype in (torch.float16, torch.bfloat16):
+            x = torch.randn(*shape, device=DEVICE, dtype=dtype)
+            out = quantizer(x)
+            assert out.shape == x.shape and out.dtype == x.dtype
+            assert out.isfinite().all()
+            # Quantisation must actually do something, but stay in the right neighbourhood.
+            assert not torch.equal(out, x), "activation quantiser was a no-op"
+            assert _relative_error(x, out) < 0.25, "activation quantisation destroyed the tensor"
+
+    # A K that is not a multiple of the group size is passed through untouched, not corrupted.
+    odd = torch.randn(4, 100, device=DEVICE, dtype=torch.float16)
+    assert torch.equal(quantizer(odd), odd)
+
+
+def test_activation_hooks_install_and_remove():
+    from mixfp4.activation import install_activation_quantizers, remove_activation_quantizers
+    from mixfp4.quantizers import QuantConfig
+
+    torch.manual_seed(0)
+    layer = torch.nn.Linear(512, 256, bias=False).to(DEVICE).half()
+    x = torch.randn(8, 512, device=DEVICE, dtype=torch.float16)
+    clean = layer(x).clone()
+
+    handles = install_activation_quantizers([layer], QuantConfig(method="rtn",
+                                                                format_policy="nvfp4"))
+    quantized = layer(x).clone()
+    assert not torch.equal(clean, quantized), "hook did not quantise the input"
+
+    remove_activation_quantizers(handles)
+    assert torch.equal(layer(x), clean), "removing the hook did not restore the layer"
+
+
 # --- kernels -------------------------------------------------------------------------------------
 
 

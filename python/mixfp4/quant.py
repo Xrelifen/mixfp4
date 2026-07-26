@@ -132,11 +132,43 @@ def quantize_mixfp4(weight: torch.Tensor,
     for key, value in method_kwargs.items():
         setattr(cfg, key, value)
 
+    fit = _fit_and_select(weight, cfg, randomise=randomise)
     n, k = weight.shape
+    packed = pack_nibbles_over_k(fit.nibbles.reshape(n, k))
+    scale_bytes = (fit.scale_codes | (fit.flags.to(torch.uint8) << 7)).t().contiguous()
+
+    return MixFP4Tensor(
+        W_q=packed,
+        scales=scale_bytes,
+        meta_scale=1.0 / fit.meta_norm,
+        shape=(n, k),
+        e0m3_fraction=fit.flags.float().mean().item(),
+    )
+
+
+@dataclass
+class _Selected:
+    """The result of fitting and selecting, before it is either packed or dequantised."""
+
+    nibbles: torch.Tensor      # [N, G, group_size] uint8
+    flags: torch.Tensor        # [N, G] int32, the chosen codebook per group
+    scale_codes: torch.Tensor  # [N, G] uint8, UE4M3 with bit 7 clear
+    effective: torch.Tensor    # [N, G] float32, decoded scale / meta_norm
+    meta_norm: float
+
+
+def _fit_and_select(x: torch.Tensor, cfg: QuantConfig, *, randomise: bool = False) -> _Selected:
+    """Run every candidate over ``x`` and keep the best per group.
+
+    Shared by the weight path (which packs the result) and the activation path (which dequantises
+    it immediately).  Both need identical arithmetic, including the UE4M3 rounding of the scale --
+    simulating NVFP4 without that rounding would flatter it.
+    """
+    n, k = x.shape
     assert k % cfg.group_size == 0, (
         f"K={k} must be a multiple of the scale group size {cfg.group_size}")
 
-    grouped = weight.detach().float().reshape(n, k // cfg.group_size, cfg.group_size)
+    grouped = x.detach().float().reshape(n, k // cfg.group_size, cfg.group_size)
     fit_method = get_method(cfg.method)
 
     candidates = (E2M1_6, E0M3_7) if randomise else cfg.candidates()
@@ -167,32 +199,35 @@ def quantize_mixfp4(weight: torch.Tensor,
     ideal = pick("scale")
     target = pick("target")
 
-    # Normalise the group scales into UE4M3's representable window.  An all-zero weight matrix has
-    # no scale to speak of; fall back to 1.0 so the reciprocal stays finite.
+    # Normalise the group scales into UE4M3's representable window.  An all-zero tensor has no
+    # scale to speak of; fall back to 1.0 so the reciprocal stays finite.
     gmax = ideal.max()
     meta_norm = (UE4M3_MAX / gmax).item() if gmax > 0 else 1.0
 
     scale_codes = encode_ue4m3(ideal * meta_norm)
-    # Re-derive codes against the scale the kernel will actually apply -- the rounded UE4M3 value
+    # Re-derive codes against the scale that will actually be applied -- the rounded UE4M3 value
     # times the global meta_scale -- and against the method's own target, which for HQQ is the
-    # slack-corrected weights rather than the weights themselves.  Refitting from the raw weights
-    # here would silently discard the optimisation; fitting against the unrounded scale would bake
-    # in an error the kernel cannot undo.
+    # slack-corrected tensor rather than the tensor itself.  Refitting from the raw values here
+    # would silently discard the optimisation; fitting against the unrounded scale would bake in
+    # an error nothing downstream can undo.
     effective = decode_ue4m3(scale_codes) / meta_norm
     safe = effective.clamp(min=torch.finfo(effective.dtype).tiny).unsqueeze(-1)
     nibbles = quantize_nibbles(target / safe, flags.unsqueeze(-1))
     nibbles = torch.where((effective == 0).unsqueeze(-1), torch.zeros_like(nibbles), nibbles)
 
-    packed = pack_nibbles_over_k(nibbles.reshape(n, k))
-    scale_bytes = (scale_codes | (flags.to(torch.uint8) << 7)).t().contiguous()
+    return _Selected(nibbles, flags, scale_codes, effective, meta_norm)
 
-    return MixFP4Tensor(
-        W_q=packed,
-        scales=scale_bytes,
-        meta_scale=1.0 / meta_norm,
-        shape=(n, k),
-        e0m3_fraction=flags.float().mean().item(),
-    )
+
+def simulate_quantization(x: torch.Tensor, cfg: QuantConfig) -> torch.Tensor:
+    """Quantise and immediately dequantise a 2-D tensor, skipping the packing step.
+
+    The activation path.  Activations are quantised per forward pass and thrown away, so packing
+    them into nibbles and unpacking again is pure waste -- but every other step, including the
+    UE4M3 scale rounding, has to match the weight path exactly for the simulation to be honest.
+    """
+    fit = _fit_and_select(x, cfg)
+    values = dequantize_nibbles(fit.nibbles, fit.flags.unsqueeze(-1))
+    return (values * fit.effective.unsqueeze(-1)).reshape(x.shape)
 
 
 def dequantize_mixfp4(q: MixFP4Tensor, dtype=torch.float32) -> torch.Tensor:
