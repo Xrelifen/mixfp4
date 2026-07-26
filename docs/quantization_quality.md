@@ -5,9 +5,14 @@ The CUDA work in `docs/mixed_nvfp4_report.md` answered *can a mixed-format GEMM 
 wikitext-2 perplexity against ordinary NVFP4, holding everything else fixed.
 
 **Short answer: yes, but modestly, and only if you select the format on the right objective.**
-The best configuration on both models tested recovers 17–23% of the perplexity that 4-bit
+The best configuration on both models tested recovers 18–23% of the perplexity that 4-bit
 quantisation costs, relative to pure NVFP4. Selecting on plain squared error — the obvious
 choice — can make things *worse* than not mixing at all.
+
+A later section adds *Four Over Six* (arXiv:2512.02010), which attacks the same weakness in E2M1
+by a different route. It reaches the same −0.2 to −0.34 ppl band, and — the more interesting
+result — **the two do not stack**: offering both choices per group is better than either in only
+one of six cells. They are competing fixes for one defect, not complementary ones.
 
 ## Method
 
@@ -18,8 +23,10 @@ arithmetic on the tensor core.
 
 Everything is held fixed except the two variables under test:
 
-- **format policy** — `nvfp4` pins every group to E2M1 (this is ordinary NVFP4); `e0m3` pins every
-  group to sign-magnitude INT4; `mixed` chooses per group.
+- **format policy** — which candidate encodings a group may choose between. `nvfp4` pins every
+  group to E2M1 with amax on 6 (ordinary NVFP4); `e0m3` pins every group to sign-magnitude INT4;
+  `mixed` chooses between those two; `nvfp4-46` chooses between mapping amax onto 6 or onto 4
+  (Four Over Six, below); `mixed-46` offers all three.
 - **method** — how codes and scale are fitted once a codebook is chosen: `rtn` (round to nearest at
   the amax-derived scale), `search` (sweep 8 scale multipliers, keep the best), `hqq` (HQQ-style
   half-quadratic proximal optimisation, see below).
@@ -99,12 +106,88 @@ a per-method default.
 **Fraction of the quantisation gap recovered** by `mixed-hqq @ p=0.5` versus `nvfp4-rtn`:
 Qwen 1.296 → 1.080 (**17%**), OPT 1.495 → 1.159 (**23%**).
 
+## Four Over Six (arXiv:2512.02010)
+
+Cook et al. make a closely related observation about E2M1 alone. Its step sizes are 0.5 below 2,
+1 up to 4, then **2** up to 6, so the top of the range is where resolution is worst: a value that
+should land near 5 has nowhere to go. *Four Over Six* maps a block's amax onto **4** instead of 6,
+giving up ±5 and ±6 in exchange for uniform spacing over what remains — and, crucially, chooses
+between the two caps **per block** by quantisation error. Capping every block at 4 is worse than
+never doing it (their Table 3, reproduced below).
+
+That is the same machinery mixfp4 already uses, with a different pair of candidates, so it drops
+into the same framework as a third one. It also needs no format support at all: the per-group scale
+is stored explicitly, so a block capped at 4 simply stores `amax/4` and nothing downstream needs to
+know. This implementation also sidesteps the paper's §3.1 caveat — it derives the global normaliser
+from the per-group scales actually selected, so the largest lands on 448 by construction whatever
+cap produced it, and the paper's forced drop of `M_FP8` from 448 to 256 is unnecessary.
+
+Reproduced on synthetic data before evaluating. The paper's Table 1 example `[10, 20, 30, 40]`
+is lossless at M=4 and not at M=6 (30 → 26.67), and their Table 3 finding holds: capping *all*
+blocks at 4 is worse than standard NVFP4 (0.0983 vs 0.0951 relative Frobenius, gaussian), while
+adaptive selection beats both (0.0879).
+
+### Perplexity, both models, all three selection rules
+
+`46` is Four Over Six; `mixed46` offers all three candidates per group (E2M1@6, E2M1@4, E0M3@7).
+Best per column in bold.
+
+**Qwen2.5-0.5B** — fp16 13.070, nvfp4-rtn 14.367
+
+| config | p=2.0 (MSE) | p=1.0 (MAE) | p=0.5 |
+|---|---|---|---|
+| mixed-rtn | 14.235 | 14.216 | 14.254 |
+| 46-rtn | 14.329 | 14.278 | 14.273 |
+| mixed46-rtn | 14.245 | 14.187 | 14.225 |
+| nvfp4-hqq | 14.198 | 14.177 | 14.181 |
+| mixed-hqq | 14.170 | **14.135** | 14.150 |
+| 46-hqq | 14.250 | 14.178 | **14.137** |
+| mixed46-hqq | **14.147** | 14.192 | 14.169 |
+
+**OPT-125m** — fp16 27.656, nvfp4-rtn 29.151
+
+| config | p=2.0 (MSE) | p=1.0 (MAE) | p=0.5 |
+|---|---|---|---|
+| mixed-rtn | 29.274 | 29.165 | 29.223 |
+| 46-rtn | 29.149 | 29.277 | 29.283 |
+| mixed46-rtn | 29.248 | 28.995 | 29.215 |
+| nvfp4-hqq | **28.830** | 28.829 | 28.926 |
+| mixed-hqq | 29.017 | 28.886 | **28.814** |
+| 46-hqq | 28.930 | **28.815** | 28.991 |
+| mixed46-hqq | 28.995 | 28.942 | 29.033 |
+
+### What this says
+
+**4/6 works, and is worth about as much as E0M3 mixing** — best case −0.34 (OPT, `46-hqq` at p=1.0)
+and −0.23 (Qwen, `46-hqq` at p=0.5), against −0.34 and −0.23 for `mixed-hqq`. Two independent
+answers to the same question, landing in the same place.
+
+**The two do not stack.** `mixed46`, which offers all three candidates, beats the best two-way
+option in exactly one of six model×rule cells. That is the expected outcome once you see what both
+are doing: E2M1@4 and E0M3@7 are both fixes for E2M1's coarse top end, so they compete for the same
+groups rather than composing. Offering both mostly splits the vote — the E0M3 share drops from
+~54% to ~47% when E2M1@4 is available, and accuracy does not improve.
+
+**No selection rule wins consistently.** The paper reports MSE best for its setting; here the best
+rule is p=2.0, p=1.0 and p=0.5 depending on model and configuration, spanning up to 0.15 ppl. This
+is an unstable hyperparameter, and the instability is itself evidence that per-group reconstruction
+error — under any exponent — is a loose proxy for what actually matters.
+
+**These gains are much smaller than the paper's** (they report −0.43 on Llama-3-1B). The likely
+reason is regime, not implementation: **the paper evaluates W4A4, this evaluates weight-only
+W4A16.** Their Figure 2 attributes NVFP4's degradation to near-maximal values in activations *and*
+weights, and quantising activations is where values near 5 are most damaging. Weight-only removes
+half of the problem the method was designed for, so the small gains here are not evidence against
+it. Their models are also 1B–70B rather than 0.1–0.5B.
+
 ## Caveats
 
 - Two small models (125M, 0.5B). The GPU available during this work had ~2 GB free, which set the
   ceiling. Behaviour at 7B+ is unmeasured and the literature suggests larger models are *more*
   tolerant of 4-bit weights, so these gains may shrink.
 - One dataset (wikitext-2) and one metric. No downstream task evaluation.
+- **Weight-only (W4A16) throughout.** Four Over Six targets W4A4, where its own analysis locates
+  most of the damage; measuring it here understates it. Activation quantisation is not implemented.
 - No calibration data anywhere. The obvious next step is activation-aware selection — AWQ's
   observation that error on channels which see large activations matters disproportionately.
   Selecting the codebook by activation-weighted error, rather than by weight error, directly

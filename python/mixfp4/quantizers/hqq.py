@@ -32,7 +32,7 @@ from __future__ import annotations
 import torch
 
 from ..codebook import dequantize_nibbles, quantize_nibbles
-from . import CODEBOOK_MAX, FitResult, QuantConfig, lp_error, register
+from . import Candidate, FitResult, QuantConfig, lp_error, register
 
 
 def shrink_lp(x: torch.Tensor, beta: float, p: float) -> torch.Tensor:
@@ -53,11 +53,11 @@ def shrink_lp(x: torch.Tensor, beta: float, p: float) -> torch.Tensor:
 
 
 @register("hqq")
-def fit_hqq(grouped: torch.Tensor, fmt: int, cfg: QuantConfig) -> FitResult:
-    fmt_t = torch.full((), fmt, dtype=torch.int32, device=grouped.device)
+def fit_hqq(grouped: torch.Tensor, cand: Candidate, cfg: QuantConfig) -> FitResult:
+    fmt_t = torch.full((), cand.fmt, dtype=torch.int32, device=grouped.device)
     tiny = torch.finfo(grouped.dtype).tiny
 
-    scale = (grouped.abs().amax(-1) / CODEBOOK_MAX[fmt]).clamp(min=tiny)
+    scale = (grouped.abs().amax(-1) / cand.cmax).clamp(min=tiny)
     slack = torch.zeros_like(grouped)          # W_e, the error slack variable
     beta = cfg.beta
 

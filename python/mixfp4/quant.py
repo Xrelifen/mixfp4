@@ -32,7 +32,16 @@ from .codebook import (
     quantize_nibbles,
     unpack_nibbles_over_k,
 )
-from .quantizers import FitResult, QuantConfig, available_methods, get_method, lp_error  # noqa: F401
+from .quantizers import (  # noqa: F401
+    E0M3_7,
+    E2M1_6,
+    Candidate,
+    FitResult,
+    QuantConfig,
+    available_methods,
+    get_method,
+    lp_error,
+)
 
 
 @dataclass
@@ -130,8 +139,8 @@ def quantize_mixfp4(weight: torch.Tensor,
     grouped = weight.detach().float().reshape(n, k // cfg.group_size, cfg.group_size)
     fit_method = get_method(cfg.method)
 
-    candidates = (0, 1) if randomise else cfg.candidates()
-    fits: list[FitResult] = [fit_method(grouped, fmt, cfg) for fmt in candidates]
+    candidates = (E2M1_6, E0M3_7) if randomise else cfg.candidates()
+    fits: list[FitResult] = [fit_method(grouped, cand, cfg) for cand in candidates]
 
     # ``index`` selects which fit each group takes; ``flags`` is the format id that fit represents,
     # which is what gets written to bit 7 of the scale byte.
@@ -145,7 +154,8 @@ def quantize_mixfp4(weight: torch.Tensor,
         # then rounded to UE4M3, a perturbation small enough not to reorder the choice.
         index = _coarsen([f.error for f in fits], cfg.granule_n, cfg.granule_k).long()
 
-    flags = torch.tensor(candidates, device=grouped.device, dtype=torch.int32)[index]
+    flags = torch.tensor([c.fmt for c in candidates],
+                         device=grouped.device, dtype=torch.int32)[index]
 
     def pick(field: str) -> torch.Tensor:
         values = torch.stack([getattr(f, field) for f in fits])

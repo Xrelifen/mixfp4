@@ -15,7 +15,7 @@ from __future__ import annotations
 import torch
 
 from ..codebook import dequantize_nibbles, quantize_nibbles
-from . import CODEBOOK_MAX, FitResult, QuantConfig, lp_error, register
+from . import Candidate, FitResult, QuantConfig, lp_error, register
 
 #: Multipliers tried by ``rtn_search``.  Below 1.0 clips the group's extremes; above 1.0 gives the
 #: outlier more headroom at the cost of resolution everywhere else.
@@ -30,17 +30,17 @@ def _fit_at_scale(grouped: torch.Tensor, scale: torch.Tensor, fmt_t: torch.Tenso
 
 
 @register("rtn")
-def fit_rtn(grouped: torch.Tensor, fmt: int, cfg: QuantConfig) -> FitResult:
-    fmt_t = torch.full((), fmt, dtype=torch.int32, device=grouped.device)
-    scale = grouped.abs().amax(-1) / CODEBOOK_MAX[fmt]
+def fit_rtn(grouped: torch.Tensor, cand: Candidate, cfg: QuantConfig) -> FitResult:
+    fmt_t = torch.full((), cand.fmt, dtype=torch.int32, device=grouped.device)
+    scale = grouped.abs().amax(-1) / cand.cmax
     nibbles, recon = _fit_at_scale(grouped, scale, fmt_t)
     return FitResult(nibbles, scale, lp_error(grouped - recon, cfg.p), grouped)
 
 
 @register("rtn_search")
-def fit_rtn_search(grouped: torch.Tensor, fmt: int, cfg: QuantConfig) -> FitResult:
-    fmt_t = torch.full((), fmt, dtype=torch.int32, device=grouped.device)
-    base = grouped.abs().amax(-1) / CODEBOOK_MAX[fmt]
+def fit_rtn_search(grouped: torch.Tensor, cand: Candidate, cfg: QuantConfig) -> FitResult:
+    fmt_t = torch.full((), cand.fmt, dtype=torch.int32, device=grouped.device)
+    base = grouped.abs().amax(-1) / cand.cmax
 
     best_err = None
     best_scale = base

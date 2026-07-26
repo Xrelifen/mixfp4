@@ -46,9 +46,17 @@ CONFIGS = {
     "mixed-rtn": ("mixed", "rtn"),
     "mixed-search": ("mixed", "rtn_search"),
     "mixed-hqq": ("mixed", "hqq"),
+    # Four Over Six (arXiv:2512.02010): per-block choice between mapping amax onto 6 or onto 4.
+    "46-all4-rtn": ("e2m1-4", "rtn"),      # every block capped at 4 -- the paper's Table 3 control
+    "46-rtn": ("nvfp4-46", "rtn"),         # the paper's method
+    "46-hqq": ("nvfp4-46", "hqq"),
+    # Both axes at once: choose the cap *and* the codebook, three candidates per group.
+    "mixed46-rtn": ("mixed-46", "rtn"),
+    "mixed46-hqq": ("mixed-46", "hqq"),
 }
 
-DEFAULT_CONFIGS = ["fp16", "nvfp4-rtn", "e0m3-rtn", "mixed-rtn", "nvfp4-hqq", "mixed-hqq"]
+DEFAULT_CONFIGS = ["fp16", "nvfp4-rtn", "e0m3-rtn", "mixed-rtn",
+                   "46-rtn", "mixed46-rtn", "nvfp4-hqq", "mixed-hqq", "46-hqq", "mixed46-hqq"]
 
 
 def quantizable_layers(model, skip: tuple[str, ...]):
@@ -170,7 +178,7 @@ def main() -> int:
     ap.add_argument("--granule-k", type=int, default=1)
     ap.add_argument("--hqq-iters", type=int, default=20)
     ap.add_argument("--select-p", type=float, default=2.0,
-                    help="exponent of the format-selection error norm")
+                    help="exponent of the candidate-selection error norm; 2=MSE, 1=MAE, inf=worst")
     ap.add_argument("--dtype", default="float16", choices=["float16", "bfloat16", "float32"])
     ap.add_argument("--logit-chunk", type=int, default=512,
                     help="positions per logit slice; lower it if the vocabulary is large")

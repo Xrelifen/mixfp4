@@ -153,6 +153,62 @@ def test_coarse_granule_is_uniform_within_a_block():
     assert (flags == flags[:, :1, :, :1]).all(), "granule is not uniform within its block"
 
 
+def test_four_over_six_reproduces_paper_table1():
+    """arXiv:2512.02010 Table 1: [10, 20, 30, 40] is lossless capped at 4, lossy capped at 6.
+
+    At M=6 the block scale is 40/6 = 6.67 and 30 normalises to 4.5, which E2M1 cannot represent
+    (its entries jump 4 -> 6), so it rounds to 4 and dequantises to 26.7.  At M=4 the scale is 10
+    and the block becomes exactly [1, 2, 3, 4].
+    """
+    x = torch.tensor([[10.0, 20.0, 30.0, 40.0] * 4], device=DEVICE)
+    capped = dequantize_mixfp4(quantize_mixfp4(x, format_policy="e2m1-4", method="rtn")).to(DEVICE)
+    assert torch.allclose(capped, x, rtol=1e-5), f"M=4 should be lossless here, got {capped[0, :4]}"
+
+    standard = dequantize_mixfp4(quantize_mixfp4(x, format_policy="nvfp4", method="rtn")).to(DEVICE)
+    assert not torch.allclose(standard, x, rtol=1e-3), "M=6 should lose the third value"
+    assert abs(standard[0, 2].item() - 80.0 / 3.0) < 0.1, \
+        f"30 should dequantise to ~26.7 at M=6, got {standard[0, 2].item()}"
+
+    # The adaptive policy must pick the lossless option.
+    adaptive = dequantize_mixfp4(quantize_mixfp4(x, format_policy="nvfp4-46",
+                                                 method="rtn")).to(DEVICE)
+    assert torch.allclose(adaptive, x, rtol=1e-5), "4/6 should select the M=4 fit here"
+
+
+def test_capping_every_block_is_worse_than_adaptive():
+    """The paper's Table 3: capping *all* blocks at 4 is worse than standard NVFP4.
+
+    Giving up +-5 and +-6 costs a representable level; it only pays off on blocks that actually
+    have values near 5/6 of their peak.  Selection has to be per block, which is the whole point.
+    """
+    torch.manual_seed(0)
+    w = torch.randn(256, 512, device=DEVICE)
+
+    def rel(policy):
+        recon = dequantize_mixfp4(quantize_mixfp4(w, format_policy=policy, method="rtn"))
+        return ((w - recon.to(DEVICE)).norm() / w.norm()).item()
+
+    standard, all_four, adaptive = rel("nvfp4"), rel("e2m1-4"), rel("nvfp4-46")
+    assert all_four > standard, \
+        f"capping every block should be worse: {all_four:.5f} vs {standard:.5f}"
+    assert adaptive < min(standard, all_four) * 1.001, \
+        f"adaptive should beat both: {adaptive:.5f} vs {standard:.5f}/{all_four:.5f}"
+
+
+def test_all_policies_round_trip():
+    """Every registered policy must produce a decodable tensor under every method."""
+    from mixfp4.quantizers import FORMAT_POLICIES, available_methods
+    torch.manual_seed(0)
+    w = torch.randn(64, 256, device=DEVICE)
+    for policy in FORMAT_POLICIES:
+        for method in available_methods():
+            q = quantize_mixfp4(w, format_policy=policy, method=method)
+            recon = dequantize_mixfp4(q).to(DEVICE)
+            rel = ((w - recon).norm() / w.norm()).item()
+            assert recon.isfinite().all(), f"{policy}/{method} produced non-finite values"
+            assert rel < 0.5, f"{policy}/{method}: implausible relative error {rel:.3f}"
+
+
 # --- kernels -------------------------------------------------------------------------------------
 
 
