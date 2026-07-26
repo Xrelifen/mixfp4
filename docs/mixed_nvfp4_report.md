@@ -225,20 +225,24 @@ NVFP4 is 1207.1 TFLOP/s; "no dispatch" is the same source with `-DMIXFP4_NO_DISP
 
 | granule (A rows × B cols × K) | dispatch | arms | OMMAs | codegen | TFLOP/s | vs stock |
 |---|---|---|---|---|---|---|
-| — (no dispatch) | none | 1 | 64 | clean | 1189.4 | +1.5% |
-| **32 × 32 × 128 (default)** | C++, per k_tile | 8 | 512 | clean | **1166.5** | **+3.3%** |
-| 16 × 64 × 128 | C++, per k_tile | 8 | 512 | clean | 1163.9 | +3.6% |
-| 16 × 32 × 128 | C++ + blob | 16 | 1024 | clean | 1116.3 | +7.5% |
-| 32 × 16 × 128 | C++ + blob | 32 | 2048 | clean | 1084.2 | +10.2% |
-| 16 × 16 × 64 | PTX, 1 per k_block | 64 | 4096 | clean | 865.2 | +28.3% |
-| **16 × 8 × 64 (the floor)** | PTX, 4 per k_block | 4 × 16 | 1024 | clean | not yet measured | ≥ +28% |
+| — (no dispatch) | none | 1 | 64 | clean | 1187.6 | +1.4% |
+| **32 × 32 × 128 (default)** | C++, per k_tile | 8 | 512 | clean | **1164.1** | **+3.4%** |
+| 16 × 32 × 128 | C++ + blob | 16 | 1024 | clean | 1113.8 | +7.5% |
+| 32 × 16 × 128 | C++ + blob | 32 | 2048 | clean | 1082.5 | +10.1% |
+| 16 × 16 × 64 | PTX, 1 per k_block | 64 | 4096 | clean | 887.2 | +26.3% |
+| **16 × 8 × 64 (the floor)** | PTX, 2 per k_block | 2 × 64 | 4096 | clean | **807.9** | **+32.9%** |
+| 16 × 8 × 64 | PTX, 4 per k_block | 4 × 16 | 1024 | clean | 677.4 | +43.8% |
+| 16 × 8 × 64 | PTX, 8 per k_block | 8 × 8 | 512 | clean | 469.4 | +61.0% |
 
-The floor's own throughput is still outstanding: the GPU was taken by another process partway
-through the sweep, and under contention every number is meaningless (stock itself read 725 instead
-of 1207, and the dispatch-free ceiling read *above* stock, inverting a known 1.5% gap). The
-`≥ +28%` is a bound, not a measurement: the 16×16×64 row already costs 28.3% with **one** dispatch
-per k_block, and the floor needs four, so it cannot be cheaper. Re-run `./scripts/sweep.sh` on an
-idle card to fill this in.
+The three 16×8×64 rows are the same granule reached with different group shapes, and their
+ordering is the whole argument: throughput falls **monotonically with the number of dispatches**,
+even though code size falls 8× going the other way (4096 → 512 OMMAs). Fewer, fatter tables win.
+Solving for the marginal cost of one dispatch per k_tile at 4096³ gives ~11–13 µs, i.e. **~70–120
+warp-scheduler cycles each** — which is the same number section "where the dispatch sits" arrives
+at from the other direction.
+
+Repeated at 8192×8192×2048 (short-K, where dispatch amortizes over fewer k_tiles), the ordering is
+identical and the costs slightly worse: +25.5% / +34.3% / +42.5% / +59.3%.
 
 Two separate cost mechanisms are at work, and separating them is what the rest of this section
 does. Above the line, cost grows with **arm count** (code footprint). Below it, cost is dominated
@@ -327,10 +331,14 @@ So the granule ladder, by budget:
 
 - **≤5% (shippable today):** 32×32×128 or 16×64×128 — 3 bits, 8 arms. Unchanged.
 - **7–11%:** 16×32×128 or 32×16×128 — 4–5 bits, via the blob path. New.
-- **≥28%:** anything with K=64, including the 16×8×64 floor — the per-k_block dispatch dominates.
+- **26–33%:** K=64 at any spatial granule — 16×16×64 costs 26.3%, the 16×8×64 floor 32.9%.
 
 The floor is therefore available and correct, but it is a granularity-first option, not a
 throughput-competitive one. Nothing beats the existing 8-arm configurations inside a 5% budget.
+Note the split of that 32.9%: going from K=128 to K=64 is most of it, and going from 32×32 to
+16×8 within K=64 adds only ~6 points. **The K axis is where the money is** — a quantization scheme
+that needs finer channel granularity but tolerates a 128-element K group is far cheaper to serve
+than one that needs a 64-element K group.
 
 Configurable via `-DMIXFP4_A_ATOMS_PER_GRANULE` / `-DMIXFP4_B_ATOMS_PER_GRANULE` (in atoms; A
 atoms are 16 rows, B atoms 8 columns) for the C++ paths, or by regenerating the header for the
