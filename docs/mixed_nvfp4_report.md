@@ -176,9 +176,38 @@ are live. TFLOP/s.
 Overhead is largest on short-K shapes (K=2048), where the per-k_tile dispatch amortizes over fewer
 iterations — the expected shape of the cost.
 
+### Against cuBLAS
+
+The comparison above is against CUTLASS kernels, which answers "what does the same library cost
+without mixed formats". The more practical question is what the vendor library gives you.
+cuBLAS 13.2 exposes the **same** block-scaled NVFP4 format this kernel uses
+(`CUBLASLT_MATMUL_MATRIX_SCALE_VEC16_UE4M3` — 16-element blocks, UE4M3 scales) and does have
+kernels for it on sm_120, so this is like-for-like rather than an approximation. Every algorithm
+the heuristic returns is timed and the best kept, so cuBLAS is shown at its best.
+
+| M × N × K | cuBLAS bf16 | cuBLAS fp8 | cuBLAS nvfp4 | CUTLASS nvfp4 | **mixed** | vs cuBLAS nvfp4 |
+|---|---|---|---|---|---|---|
+| 1024³ | 127.6 | 264.7 | 281.7 | 281.1 | 275.2 | −2.3% |
+| 2048³ | 173.4 | 496.4 | 804.9 | 800.4 | 777.5 | −3.4% |
+| 4096³ | 197.7 | 617.6 | 1200.5 | 1204.9 | 1164.3 | −3.0% |
+| 8192³ | 205.8 | 743.4 | 1401.4 | 1400.1 | 1386.6 | **−1.1%** |
+| 4096×4096×16384 | 200.1 | 654.5 | 1332.6 | 1289.1 | 1254.5 | −5.9% |
+| 8192×8192×2048 | 202.5 | 670.7 | 1278.1 | 1259.0 | 1196.1 | −6.4% |
+| 16384×16384×2048 | 204.5 | 696.7 | 1330.5 | 1313.7 | 1249.0 | −6.1% |
+
+Two things worth reading off this:
+
+- **cuBLAS-nvfp4 and CUTLASS-nvfp4 agree to within 0.4%.** Two independent implementations landing
+  on the same number is good evidence the baseline really is the hardware ceiling, not an artifact
+  of one library's tuning.
+- The mixed kernel costs **1–6% against the best available NVFP4**, while being ~1.9× cuBLAS fp8
+  and ~6.8× cuBLAS bf16. Note also that cuBLAS's fp8 is roughly 1.8× the CUTLASS fp8 example
+  kernel, so the earlier "3.5× FP8" figure was flattering — against a properly tuned fp8 the honest
+  multiplier is ~1.9×.
+
 > A shared GPU makes these numbers fragile: with another process resident, stock `nvfp4_gemm`
-> itself read 852 instead of 1208. Both `scripts/sweep.sh` and `scripts/bench_all.sh` refuse to run
-> unless the card is idle.
+> itself read 852 instead of 1208, and cuBLAS-nvfp4 read 983 instead of 1200. All three benchmark
+> scripts (`sweep.sh`, `bench_all.sh`, `bench_vs_cublas.sh`) refuse to run unless the card is idle.
 
 ---
 
