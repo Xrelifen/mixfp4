@@ -310,6 +310,47 @@ roughly 40–70% of E0M3's benefit at zero kernel cost, 4/6 is the better deal f
 already committed to a mixed-format kernel. For this repository, which *is* committed, the answer
 is to use both: they stack.
 
+## Appendix: the full grid
+
+Every candidate policy against every fitting method, W4A4, matched activations, MSE selection.
+`vs 4bit` is against NVFP4 RTN; `recov` is the share of the 4-bit cost undone.
+
+### OPT-125m — 140 windows
+
+| baseline | ppl | vs fp16 |
+|---|---|---|
+| W16A16 (fp16) | 27.656 | — |
+| W16A4 (activations only) | 28.785 | +1.130 |
+| W4A4 NVFP4 RTN (reference) | 30.553 | +2.897 |
+
+| candidates per group | RTN ppl | recov | search ppl | recov | HQQ ppl | recov |
+|---|---|---|---|---|---|---|
+| E2M1@6 — plain NVFP4 | 30.553 | 0.0% | 30.415 | 4.8% | 30.172 | 13.1% |
+| E2M1@4 — *all* blocks | 31.146 | −20.5% | 31.077 | −18.1% | 31.106 | −19.1% |
+| E0M3 — *all* blocks | 31.268 | −24.7% | 31.200 | −22.3% | 31.013 | −15.9% |
+| 4/6 adaptive | 30.393 | 5.5% | 30.074 | 16.5% | 30.069 | 16.7% |
+| mixed E2M1/E0M3 | 30.349 | 7.0% | 30.166 | 13.3% | 30.071 | 16.6% |
+| **mixed + 4/6** | 30.315 | 8.2% | 30.208 | 11.9% | **30.010** | **18.7%** |
+
+Three things only the full grid shows:
+
+**Neither alternative format is better than NVFP4 on its own.** Capping every block at 4 loses
+20%, and E0M3 everywhere loses 25% — under all three fitting methods. All the value is in having a
+per-group *choice*; this reproduces Four Over Six's Table 3 independently, and extends the same
+conclusion to E0M3.
+
+**Every adaptive row beats NVFP4, at every method level.** Six for six.
+
+**For 4/6, a cheap scale search buys almost all of HQQ's benefit** — 16.5% against 16.7%, for
+eight multiplier evaluations rather than twenty annealed iterations. Worth knowing when
+quantisation time is a constraint.
+
+**One non-monotonicity.** Under `search`, adding the third candidate makes things *worse*:
+`mixed + 4/6` reaches 11.9% where `4/6` alone reaches 16.5%. A wider menu cannot hurt if selection
+were exact, so this is direct evidence that per-group reconstruction error is a loose proxy — more
+candidates give the proxy more chances to pick wrong. Same underlying problem as the `select-p`
+instability noted earlier.
+
 ## Caveats
 
 - Two small models (125M, 0.5B). The GPU available during this work had ~2 GB free, which set the
