@@ -132,6 +132,12 @@ using namespace cute;
 // so 32 arms -- the most the blob path inlines.
 #if defined(MIXFP4_JOINT_KA) && MIXFP4_JOINT_KA
 #define MIXFP4_K_GRANULE_A 64
+// Joint-K-A is the one path with a flag that cannot come from registers, so it is the one path
+// that benefits from computing the next k_tile's arm index a k_block early. Strictly better
+// everywhere measured (+2.0 points at 4096^3); -DMIXFP4_PIPE_FLAGS=0 restores the naive read.
+#ifndef MIXFP4_PIPE_FLAGS
+#define MIXFP4_PIPE_FLAGS 1
+#endif
 #endif
 // Split-K: one dispatch per k_block, but -- unlike the historical "in-body" dispatch that cost
 // ~20 points -- each arm contains that k_block's smem->rmem copies AS WELL AS its MMAs.
@@ -1388,9 +1394,42 @@ struct CollectiveMma<
     // WARPSYNC on an already-converged warp.
     auto no_ifconv = [] { asm volatile("bar.warp.sync -1;"); };
 
+    // Pull the pipeline barrier and stage advance INSIDE the first arm, ahead of its MMAs.
+    //
+    // Splitting the k_tile into two separately-dispatched regions leaves the barrier stranded
+    // between them, where nothing can cover it -- ncu shows the barrier stall going 0.69 -> 1.09
+    // against the single-dispatch build. Inside the arm it overlaps this k_block's 16 MMAs, the
+    // way it does in the whole-k_tile arm.
+    //
+    // Legal because consumer_release only guards shared-memory reads of the retiring stage, and
+    // copy_kblock(1) just above is this stage's last one; the MMAs that follow touch registers.
     auto kb0_region = [&](auto site_c) {
       no_ifconv();
       copy_kblock(_1{});
+#if defined(MIXFP4_EARLY_BARRIER) && MIXFP4_EARLY_BARRIER
+      cutlass::arch::NamedBarrier::sync(
+          thr_size(tiled_mma), cutlass::arch::ReservedNamedBarriers::Sm120MainloopBarrier);
+      pipeline.consumer_release(smem_pipe_read);
+      ++smem_pipe_read;
+      read_stage    = smem_pipe_read.index();
+      tCsA_stage    = tCsA(_,_,_,read_stage);
+      tCsB_stage    = tCsB(_,_,_,read_stage);
+      tCsSFA_stage  = tCsSFA(_,_,_,read_stage);
+      tCsSFB_stage  = tCsSFB(_,_,_,read_stage);
+      pipeline.consumer_wait(smem_pipe_read);
+#endif
+      gemm_kblock(site_c, _0{});
+    };
+    // Same, minus the wait: the last k_tile has no successor stage to wait on.
+    auto kb0_region_tail = [&](auto site_c) {
+      no_ifconv();
+      copy_kblock(_1{});
+#if defined(MIXFP4_EARLY_BARRIER) && MIXFP4_EARLY_BARRIER
+      cutlass::arch::NamedBarrier::sync(
+          thr_size(tiled_mma), cutlass::arch::ReservedNamedBarriers::Sm120MainloopBarrier);
+      pipeline.consumer_release(smem_pipe_read);
+      ++smem_pipe_read;
+#endif
       gemm_kblock(site_c, _0{});
     };
     auto kb1_region = [&](auto site_c) {
@@ -1405,11 +1444,16 @@ struct CollectiveMma<
 
     CUTLASS_PRAGMA_NO_UNROLL
     for ( ; k_tile_count > 1; --k_tile_count) {
-      uint32_t const pat0 = read_site_smem(_0{});
-      uint32_t const pat1 = read_site_smem(_1{});
+      // Both flag reads come from the REGISTER fragment, not smem. k_block 0's operands are
+      // resident on entry; k_block 1's are loaded by kb0_region's own copy_kblock(1), so by the
+      // time the second dispatch runs they are in registers too. The earlier version of this path
+      // read both from shared memory at the top of the k_tile, which is where its cost was: ncu
+      // puts one dispatch at ~23 instructions, only ~6 of which are the branch tree.
+      uint32_t const pat0 = read_site(_0{});
 
       mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(pat0, kb0_region);
 
+#if !(defined(MIXFP4_EARLY_BARRIER) && MIXFP4_EARLY_BARRIER)
       cutlass::arch::NamedBarrier::sync(
           thr_size(tiled_mma), cutlass::arch::ReservedNamedBarriers::Sm120MainloopBarrier);
       pipeline.consumer_release(smem_pipe_read);
@@ -1420,24 +1464,26 @@ struct CollectiveMma<
       tCsSFA_stage  = tCsSFA(_,_,_,read_stage);
       tCsSFB_stage  = tCsSFB(_,_,_,read_stage);
       pipeline.consumer_wait(smem_pipe_read);
+#endif
 
-      mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(pat1, kb1_region);
+      mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(read_site(_1{}), kb1_region);
     } // k_tile_count
 
     // Hoist out the last k_tile: no stage follows it, so neither the wait nor k_block 0's copy
     // happens.
     {
-      uint32_t const pat0 = read_site_smem(_0{});
-      uint32_t const pat1 = read_site_smem(_1{});
-
-      mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(pat0, kb0_region);
+#if defined(MIXFP4_EARLY_BARRIER) && MIXFP4_EARLY_BARRIER
+      mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(read_site(_0{}), kb0_region_tail);
+#else
+      mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(read_site(_0{}), kb0_region);
 
       cutlass::arch::NamedBarrier::sync(
           thr_size(tiled_mma), cutlass::arch::ReservedNamedBarriers::Sm120MainloopBarrier);
       pipeline.consumer_release(smem_pipe_read);
       ++smem_pipe_read;
+#endif
 
-      mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(pat1, kb1_region_tail);
+      mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(read_site(_1{}), kb1_region_tail);
     }
 #elif defined(MIXFP4_JOINT_KA) && MIXFP4_JOINT_KA && \
       defined(MIXFP4_PIPE_FLAGS) && MIXFP4_PIPE_FLAGS

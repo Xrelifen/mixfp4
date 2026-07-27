@@ -351,6 +351,99 @@ The practical consequence for a quantization scheme: **a 64-element K group on t
 nearly free** (+5.0%), fine channel granularity at K=128 is cheap (16×32×128 at +7.5%), and only
 the combination of both, or the true floor, runs into the 20-point wall.
 
+### The warp tile sets the arm count, and it is the cheapest thing to change
+
+Everything above treats the arm count as a property of the granule. It is not: it is a property of
+the granule **relative to the warp tile**, and the warp tile is a free parameter.
+
+The builder gives a 128×128 CTA tile to 8 MMA warps as `Layout<Shape<_4,_2,_1>>`, so a warp owns
+32 rows × 64 columns — *two* 16-row m-atoms. That two is the whole problem for a 16-row granule: it
+costs 2 dispatch bits per k_block, so 4 jointly, and with B's cheapest single bit that is 5 bits
+and 32 arms. Measured, **1065.8 TFLOP/s, +13.3%**.
+
+`Layout<Shape<_8,_1,_1>>` gives each warp ONE m-atom and all 16 n-atoms. The identical granule now
+costs 2·1 + 1 = 3 bits, i.e. **8 arms**. Unlike shrinking the CTA tile — which loses operand reuse
+and cost 25% before any dispatch existed — the tile stays 128×128, so the CTA computes the same
+product and moves the same global traffic. Only intra-CTA shared-memory reads grow (every warp
+reads all 128 columns of B rather than 64), and this kernel had headroom there. It is also not an
+exotic layout: it is what CUTLASS's own sm120 blockscaled builder selects for tiles narrower than
+16, so the smem layouts and copy atoms already support it.
+
+One trap, and it is worth more than anything else in this section. 8×1 makes `MMA_TILE_M` 128, so
+`EPI_TILE_M % MMA_TILE_M == 0` fails and the epilogue tile must be named explicitly. Which one you
+name dominates the result:
+
+| epilogue tile | no-dispatch ceiling | vs stock |
+|---|---|---|
+| `Shape<_128,_16>` | 1169.4 | +3.3% |
+| `Shape<_128,_64>` | 1161.3 | +4.0% |
+| **`Shape<_128,_32>`** | **1201.8** | **+0.5%** |
+
+At 128×32 the 8×1 arrangement's ceiling is *above* the 4×2 arrangement's own 1187 — the warp
+rearrangement is free, and the 3.3% the first guess cost was entirely the epilogue tile.
+
+With that, `MIXFP4_JOINT_KA` delivers a **16 row × 64 K** format granule — the A footprint of one
+`mma.sync` — at 8 arms:
+
+| shape | stock | mixed | overhead |
+|---|---|---|---|
+| 4096³ | 1206.0 | 1149.9 | **4.88%** |
+| 4096×4096×8192 | 1274.1 | 1207.3 | 5.53% |
+| 8192×8192×2048 | 1257.8 | 1208.4 | 4.09% |
+| 8192³ | 1402.5 | 1330.5 | 5.41% |
+| 2048³ | 798.2 | 785.4 | 1.62% |
+
+Two smaller things were worth ~2 points each. Only k_block 1's flags need the smem round trip —
+k_block 0's operands are resident in registers at dispatch time, so reading them back out of
+shared memory put an LDS latency on the branch's critical path for nothing. And the remaining smem
+read can be **software-pipelined**: the next k_tile's operands become readable right after
+`copy_kblock(0)` refills the register fragment, so computing the next arm index there gives the
+load 16 MMAs to hide behind (1130.4 → 1150.7).
+
+### Both operands at 16×64 is blocked, and by how much
+
+The obvious next ask is a 16×16×64 granule — both operands at one `mma.sync`'s footprint. It does
+not fit, and the reason is arithmetic rather than tuning.
+
+A warp's footprint is `CTA_M·CTA_N/8` = 2048 elements. For a 16×16 granule the flag count is
+`warp_rows/16 + warp_cols/16`, which is minimised by a square-ish warp tile and equals **6 for
+every arrangement of 8 warps** (32×64 → 2+4; 64×32 → 4+2; 16×128 → 1+8). So 64 arms per k_block,
+and 12 bits / 4096 arms if specialised jointly to keep the branch out of the loop body. Three
+escapes were tried and all are closed:
+
+| escape | result |
+|---|---|
+| 16 warps (4×4), halving the warp tile to 32×32 → 4 bits | the cooperative kernel `static_assert`s "TiledMMA operating using 256 threads" |
+| CTA tile K=64, so one k_tile *is* one k_block and 6 bits suffice out-of-body | no-dispatch ceiling **720.8 TFLOP/s, −40%** — a k_tile amortises half as much over each TMA load and barrier |
+| 64 arms out-of-body at K=128 (16×16×128) | outlines: `STACK:864`, `CALL:1` — 64 arms × 32 MMAs is past the cliff, though 64 × 16 stays clean |
+
+That leaves a per-k_block dispatch, and there is a hard empirical bound on it. At
+`MIXFP4_TAG=none` — one arm, index effectively free, no i-cache pressure, and only *3* flags
+rather than 6 — two in-body dispatches per k_tile already cost **1174 → 994 TFLOP/s (+21%)**. The
+real target needs strictly more than that, and measures:
+
+| granule | mechanism | TFLOP/s | vs stock |
+|---|---|---|---|
+| 16×16×64 | `brx.idx`, 64 arms/k_block | 887.6 | +35.9% |
+| 16×16×64 | balanced `bra` tree, 64 arms/k_block | 790.2 | +52.8% |
+| 16×64 on A only | `JOINT_KA`, 8 arms, out-of-body | **1150.7** | **+4.9%** |
+
+Why the jump is slow is worth recording, because the earlier reading of it was wrong. `brx.idx`
+compiles to `IMAD → LDC c[0x2][...] → BRX`: **the branch target is a constant-memory load**, so
+instruction fetch cannot resolve until it returns, and a `WARPSYNC.ALL` follows at the target. But
+that is not the dominant term either — replacing it with a balanced `bra` tree removes the `LDC`
+entirely and is *worse* (790 vs 888), and moving the pipeline barrier inside the first arm to stop
+it stranding between two dispatch regions buys only +4 (935 → 939).
+
+What the profiler says instead is that it is not a stall at all. Across the pair, `smsp__issue_active`
+is unchanged (21.9% vs 22.4%) and cycles track instruction count almost exactly (+24% instructions
+→ +21% cycles), while `math_pipe_throttle` *falls* (2.94 → 2.20) — the tensor pipe is going idle.
+Each dispatch is ~23 instructions of which only ~6 are the branch; the rest is reading and
+assembling the flags. Splitting a k_tile into two separately-dispatched regions doubles that and
+halves the straight-line run each one amortises over.
+
+So the exchange rate stands: **one operand at the `mma.sync` floor is ~5%; both is ~36%.**
+
 ### Where the dispatch sits is worth ~90 cycles
 
 A dispatch placed *inside* the k_tile body costs about 90 cycles; one that encloses the whole

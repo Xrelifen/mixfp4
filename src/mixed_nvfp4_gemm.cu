@@ -81,7 +81,15 @@ using OperatorClass = cutlass::arch::OpClassBlockScaledTensorOp;
 #ifndef MIXFP4_TILE_N
 #define MIXFP4_TILE_N 128
 #endif
-using ThreadBlockShape = Shape<_128, cute::Int<MIXFP4_TILE_N>, _128>;
+// The CTA tile's K decides whether a 64-element K granule needs the joint-arm trick at all. At
+// K=128 a k_tile holds two k_blocks, so a per-64-K granule either doubles the dispatch bits
+// (joint) or moves the branch inside the loop body (~910 TFLOP/s wall). At K=64 a k_tile IS one
+// k_block, so an ordinary per-k_tile dispatch -- the cheap kind, outside the body -- already
+// carries a 64-element K granule at no extra bits.
+#ifndef MIXFP4_TILE_K
+#define MIXFP4_TILE_K 128
+#endif
+using ThreadBlockShape = Shape<_128, cute::Int<MIXFP4_TILE_N>, cute::Int<MIXFP4_TILE_K>>;
 using ClusterShape = Shape<_1, _1, _1>;
 
 // How the CTA's 8 MMA warps are arranged over the tile. The builder picks 4x2 for a 128-wide tile,
@@ -101,9 +109,15 @@ using ClusterShape = Shape<_1, _1, _1>;
 #ifndef MIXFP4_ATOM_M
 #define MIXFP4_ATOM_M 4
 #endif
-static_assert(8 % MIXFP4_ATOM_M == 0, "the 8 MMA warps must divide into MIXFP4_ATOM_M rows");
+// MIXFP4_ATOM_N defaults to whatever completes the builder's 8 MMA warps, but can be set
+// independently to use MORE warps. 4x4 puts 16 warps on the tile, so a warp owns 32x32 rather than
+// 32x64: a 16x16 granule then costs 2+2 = 4 flag bits per k_block instead of 2+4 = 6, and there
+// are twice as many warps per scheduler to cover an in-loop branch's fetch bubble.
+#ifndef MIXFP4_ATOM_N
+#define MIXFP4_ATOM_N (8 / MIXFP4_ATOM_M)
+#endif
 using MixedAtomLayoutMNK =
-    Layout<Shape<cute::Int<MIXFP4_ATOM_M>, cute::Int<8 / MIXFP4_ATOM_M>, _1>>;
+    Layout<Shape<cute::Int<MIXFP4_ATOM_M>, cute::Int<MIXFP4_ATOM_N>, _1>>;
 
 // The epilogue asserts `EPI_TILE_M % MMA_TILE_M == 0`, where MMA_TILE_M is the CTA tile's M
 // divided by the m-atoms one warp owns. The 4x2 arrangement gives 128/2 = 64, which the auto
