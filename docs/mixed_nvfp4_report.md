@@ -253,30 +253,58 @@ code footprint. Among the K=64 rows, it is dominated by **how many dispatches si
 k_tile body**, and the footprint barely matters (the 512-OMMA and 4096-OMMA floor configs differ
 by 17 points in the *wrong* direction).
 
-### Decomposing the floor's 32.9%
+### It is the dispatch's *position*, not the K axis — and that is fixable
 
 Rows 2 and 5 of that table are a controlled experiment. **32×32×128 and 32×32×64 have the same
 spatial granule, the same 8 arms, and the same 512 OMMAs.** The only difference is that the
 dispatch moved from outside the k_tile body to inside it, once per k_block. That alone costs
 **20.2 points**, +3.3% → +23.5%, and it is the single largest term anywhere in this section.
 
-With that isolated, the floor's cost decomposes cleanly:
+It is tempting to read that as "the K axis is expensive". It is not. A K granule of 64 only
+*implies* an in-body dispatch if you insist on choosing the format after entering the body. The
+alternative is to specialize the k_tile on **both k_blocks' patterns at once** — `2^(2·bits)` arms
+instead of `2^bits`, with the branch left where it is cheap. Two variants, both on the blob path:
 
-| step | granule | vs stock | marginal | what it buys |
-|---|---|---|---|---|
-| shipped default | 32×32×128 | +3.3% | — | — |
-| move the dispatch into the body | 32×32×64 | +23.5% | **+20.2** | K: 128 → 64 |
-| 8× the code, same dispatch count | 16×16×64 | +26.3% | +2.8 | A: 32 → 16 rows |
-| a second dispatch per k_block | 16×8×64 | +32.9% | +6.6 | B: 16 → 8 columns |
+| mode | A granule | B granule | arms | TFLOP/s | vs stock |
+|---|---|---|---|---|---|
+| shipped default | 32 rows × 128 K | 32 cols × 128 K | 8 | 1167.3 | +3.4% |
+| **`MIXFP4_JOINT_KB`** | 32 rows × 128 K | **64 cols × 64 K** | 8 | **1147.6** | **+5.0%** |
+| `MIXFP4_JOINT_K` | 32 rows × **64 K** | 64 cols × **64 K** | 16 | 1093.2 | +9.5% |
+| `MIXFP4_JOINT_KB`, finer B | 32 rows × 128 K | 32 cols × **64 K** | 32 | 1057.7 | +12.5% |
+| in-body dispatch | 32 rows × 64 K | 32 cols × 64 K | 8 | 923.5 | +23.6% |
 
-So **roughly two thirds of the price of the hardware floor is the K axis**, and it is paid before
-any spatial refinement happens. The A refinement is nearly free in dispatch terms — 16×16×64 and
-32×32×64 read 961.9 and 965.6 at `TAG=none`, i.e. indistinguishable — and its 2.8 points are
-almost entirely the instruction-fetch cost of 8× the code.
+So a 64-element K granule costs **1.6 points** on the weight operand, or ~6 on both — not 20. The
+cleanest reading is the pair of 16-arm rows in the two tables: 16×32×128 (+7.7%) versus joint-K
+32×64×64 (+8.9%). Same arm count, same dispatch placement, differing only in K. **K=64 is worth
+about 1.2 points.** Everything else that looked like a K cost was the branch moving indoors.
 
-The practical consequence for a quantization scheme: fine *channel* granularity is comparatively
-cheap if a 128-element K group is acceptable (16×32×128 at +7.5%, 32×16×128 at +10.1%). Needing a
-64-element K group costs ~20% before anything else is refined.
+`JOINT_KB` is the asymmetric one and usually the right default: in a linear layer B is the weight
+operand, and weights are what a quantizer groups along K (16 elements per scale). A is
+activations. Spending the arm budget only on B costs `kAGran + 2·kBGran` bits rather than
+`2·(kAGran + kBGran)`, which is how it fits a 64-element K granule into the *same 8 arms* the
+shipped default already uses. The only added work is two shared-memory flag reads per k_tile,
+outside the body.
+
+Two implementation notes, both of which cost a debugging round:
+
+- At the top of a k_tile **only k_block 0's operands are resident** — k_block 1 is copied inside
+  the body by `copy_kblock(k_block_next)`. Reading its flags from the register fragment at
+  dispatch time silently picks up the *previous* k_tile (0.29 relative error, not 0.66, because
+  most granules still happen to match). Both joint paths read from the smem stage instead, which
+  the TMA producer filled before `consumer_wait` released us.
+- `tCsSF*_stage` is the copy **source** view, shaped `(CPY, CPY_MN, CPY_K)`, and `CPY_MN` is the
+  copy atom's tiling, *not* the MMA atom index — for SFB the copy moves several atoms at once, so
+  `(0, 4, k)` is not atom 4. Index it linearly: `copy()` guarantees logical element *i* of the
+  source lands in element *i* of the retiled register view, so atom *a*'s byte 0 is flat index
+  `V·a`. This is invisible in any configuration with one granule per operand (index 0 is index 0
+  under every layout) and is 0.37 relative error the moment a second granule exists.
+
+What the joint trick cannot do is reach the floor. 16×8×64 needs 10 bits per k_block, so 20 jointly
+— far past the 32-arm cliff. That is why the floor still pays the in-body dispatch, twice.
+
+The practical consequence for a quantization scheme: **a 64-element K group on the weights is
+nearly free** (+5.0%), fine channel granularity at K=128 is cheap (16×32×128 at +7.5%), and only
+the combination of both, or the true floor, runs into the 20-point wall.
 
 ### Where the dispatch sits is worth ~90 cycles
 
@@ -359,13 +387,17 @@ at K=64.
 
 So the granule ladder, by budget:
 
-- **≤5% (shippable today):** 32×32×128 or 16×64×128 — 3 bits, 8 arms. Unchanged.
-- **7–11%:** 16×32×128 or 32×16×128 — 4–5 bits, via the blob path. New.
-- **26–33%:** K=64 at any spatial granule — 16×16×64 costs 26.3%, the 16×8×64 floor 32.9%.
+- **≤5%:** 32×32×128 or 16×64×128 (3 bits, 8 arms), **and** a 64-element K granule on the weight
+  operand via `MIXFP4_JOINT_KB` at +5.0% — same 8 arms.
+- **7–13%:** 16×32×128 or 32×16×128 via the blob path; K=64 on both operands via `MIXFP4_JOINT_K`
+  at +9.5%; 32-column B at K=64 at +12.5%.
+- **24–33%:** anything needing a dispatch *inside* the k_tile body — which now means only the
+  configurations too fine to fit the joint scheme's arm budget, including the 16×8×64 floor.
 
 The floor is therefore available and correct, but it is a granularity-first option, not a
-throughput-competitive one. Nothing beats the existing 8-arm configurations inside a 5% budget,
-and **the K axis is where the money is** — see the decomposition above.
+throughput-competitive one. What *did* move is the K axis: it used to cost 20 points and now costs
+1.6 on the weights, because the joint schemes keep the branch outside the loop body. What has not
+moved is the arm budget, and that is what still rules out the floor.
 
 Configurable via `-DMIXFP4_A_ATOMS_PER_GRANULE` / `-DMIXFP4_B_ATOMS_PER_GRANULE` (in atoms; A
 atoms are 16 rows, B atoms 8 columns) for the C++ paths, or by regenerating the header for the
@@ -400,6 +432,13 @@ caught before the GPU is involved:
 A_ATOMS=1 B_ATOMS=4 python3 scripts/gen_mixed_mma_blob.py       # 16 x 32 x 128
 EXTRA="-DMIXFP4_BLOB=1 -DMIXFP4_A_ATOMS_PER_GRANULE=1 -DMIXFP4_B_ATOMS_PER_GRANULE=4" \
   ./scripts/build_mixed.sh build/blob16
+
+# a 64-element K granule on the WEIGHT operand, in the same 8 arms as the default: +5.0%
+A_ATOMS=2 B_ATOMS=8 python3 scripts/gen_mixed_mma_blob.py
+EXTRA="-DMIXFP4_BLOB=1 -DMIXFP4_JOINT_KB=1 -DMIXFP4_A_ATOMS_PER_GRANULE=2 -DMIXFP4_B_ATOMS_PER_GRANULE=8" \
+  ./scripts/build_mixed.sh build/jkb          # A 32 rows x 128 K, B 64 cols x 64 K
+
+# K=64 on both operands (-DMIXFP4_JOINT_K=1 instead) costs 16 arms and +9.5%
 
 # K=64, down to the hardware floor, at the per-k_block dispatch cost
 python3 scripts/gen_mixed_mma_ptx.py --a-atoms 1 --b-atoms 1 --m-per-group 2 --n-per-group 2
