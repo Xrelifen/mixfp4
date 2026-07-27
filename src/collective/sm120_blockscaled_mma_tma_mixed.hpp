@@ -1439,6 +1439,64 @@ struct CollectiveMma<
 
       mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(pat1, kb1_region_tail);
     }
+#elif defined(MIXFP4_JOINT_KA) && MIXFP4_JOINT_KA && \
+      defined(MIXFP4_PIPE_FLAGS) && MIXFP4_PIPE_FLAGS
+    // ---------------------------------------------------------------------------------------
+    // Software-pipeline the dispatch index itself.
+    // ---------------------------------------------------------------------------------------
+    // Joint-K-A needs one flag that is NOT in registers -- k_block 1's, which has to come from the
+    // smem stage. Read at the top of the k_tile, that LDS sits directly on the critical path into
+    // the branch tree, and nothing overlaps it.
+    //
+    // But the operands for the NEXT k_tile become available partway through this one: right after
+    // copy_kblock(0) reloads the register fragment from the freshly waited-on stage. Computing the
+    // next arm index there gives the load this k_block's 16 MMAs to complete behind, and leaves
+    // the branch with a value already in a register.
+    auto next_pattern = [&] {
+      return read_a_reg(_0{}) | (read_a_smem(_1{}) << kAGran)
+                              | (read_b_reg(_0{}) << (2 * kAGran));
+    };
+
+    uint32_t pattern_cur  = next_pattern();
+    uint32_t pattern_next = 0;
+
+    auto k_tile_body_pipe = [&](auto site_c) {
+      for_each(make_int_sequence<K_BLOCK_MAX>{}, [&] (auto k_block) {
+        auto k_block_next = ((k_block + 1) == K_BLOCK_MAX) ? 0 : (k_block + 1);
+
+        if (k_block == K_BLOCK_MAX - 1) {
+          cutlass::arch::NamedBarrier::sync(
+            thr_size(tiled_mma), cutlass::arch::ReservedNamedBarriers::Sm120MainloopBarrier);
+          pipeline.consumer_release(smem_pipe_read);
+          ++smem_pipe_read;
+          read_stage   = smem_pipe_read.index();
+          tCsA_stage   = tCsA(_,_,_,read_stage);
+          tCsB_stage   = tCsB(_,_,_,read_stage);
+          tCsSFA_stage = tCsSFA(_,_,_,read_stage);
+          tCsSFB_stage = tCsSFB(_,_,_,read_stage);
+          pipeline.consumer_wait(smem_pipe_read);
+        }
+
+        copy_kblock(k_block_next);
+
+        if (k_block == K_BLOCK_MAX - 1) {
+          // The stage just waited on is the next k_tile's, and copy_kblock(0) has just refilled
+          // the register fragment from it, so every flag the next arm needs is readable now.
+          pattern_next = next_pattern();
+        }
+
+        gemm_kblock(site_c, k_block);
+      });
+    };
+
+    CUTLASS_PRAGMA_NO_UNROLL
+    for ( ; k_tile_count > 1; --k_tile_count) {
+      mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(pattern_cur, k_tile_body_pipe);
+      pattern_cur = pattern_next;
+    } // k_tile_count
+
+    // The last body already computed the tail's arm.
+    mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(pattern_cur, k_tile_tail_body);
 #else
     CUTLASS_PRAGMA_NO_UNROLL
     for ( ; k_tile_count > 1; --k_tile_count) {
