@@ -73,7 +73,15 @@ using ElementAccumulator = float;
 using ArchTag = cutlass::arch::Sm120;
 using OperatorClass = cutlass::arch::OpClassBlockScaledTensorOp;
 
-using ThreadBlockShape = Shape<_128, _128, _128>;
+// The CTA tile's N sets how many n-atoms a warp covers, and therefore how many B granules a given
+// column granularity costs in dispatch bits. At N=128 a warp owns 8 n-atoms, so 16-column granules
+// need 4 bits; halving to N=64 makes it 4 atoms and 2 bits, which is the difference between 64 arms
+// (outlined) and 16 (clean) for a 16x16x128 granule. The tile is smaller, so the dispatch-free
+// ceiling drops too -- measure both before concluding anything.
+#ifndef MIXFP4_TILE_N
+#define MIXFP4_TILE_N 128
+#endif
+using ThreadBlockShape = Shape<_128, cute::Int<MIXFP4_TILE_N>, _128>;
 using ClusterShape = Shape<_1, _1, _1>;
 
 using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<

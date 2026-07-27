@@ -1039,6 +1039,12 @@ struct CollectiveMma<
     static_assert(kMmaM == MIXFP4_GEN_MMA_M, "generated PTX was built for a different MMA_M");
     static_assert(kMmaN == MIXFP4_GEN_MMA_N, "generated PTX was built for a different MMA_N");
 #endif
+#if defined(MIXFP4_BLOB) && MIXFP4_BLOB
+    // Same hazard for the blob header: it hardcodes the warp's atom counts, so a CTA tile change
+    // (MIXFP4_TILE_N) without regenerating would silently compute garbage.
+    static_assert(kMmaM == MIXFP4_BLOBGEN_MMA_M, "blob header was built for a different MMA_M");
+    static_assert(kMmaN == MIXFP4_BLOBGEN_MMA_N, "blob header was built for a different MMA_N");
+#endif
 
     // Bit 7 of scale-factor byte 0 of each operand, for the k_block already resident in
     // registers. Every lane of a warp already holds the right value for the whole granule by

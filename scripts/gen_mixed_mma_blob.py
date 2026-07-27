@@ -36,7 +36,12 @@ Then build with -DMIXFP4_BLOB=1 and matching -DMIXFP4_A/B_ATOMS_PER_GRANULE.
 from __future__ import annotations
 import os, pathlib
 
-MMA_M, MMA_N = 2, 8
+# Atoms a warp covers. Derived from the CTA tile and the warp arrangement: with
+# Shape<_128,_128,_128> and a 4x2 warp grid a warp owns 32 rows x 64 cols, i.e. 2 x 8 atoms.
+# Halving the CTA tile's N to Shape<_128,_64,_128> makes it 2 x 4, which halves the number of B
+# granules -- and so squares down the arm count for a given column granularity.
+MMA_M = int(os.environ.get("MMA_M", 2))
+MMA_N = int(os.environ.get("MMA_N", 8))
 # Default to 16 arms (16 rows x 32 cols x 128 K): the cheapest point that is finer than the
 # shipped 32x32x128 default and still well inside the moved cliff.
 A_ATOMS = int(os.environ.get("A_ATOMS", 1))
@@ -48,15 +53,22 @@ NPAT = 1 << (A_GRAN + B_GRAN)
 # Measured on an RTX 5090 / CUDA 13.1: 32 arms still inlines cleanly, 64 outlines the k_tile body
 # and spills the accumulators to a 864-byte frame. Emitting past that produces a correct but
 # ~30x slower kernel, which is worth refusing to do silently.
-if NPAT > 32:
+if NPAT > 32 and os.environ.get("ALLOW_OUTLINE") != "1":
     raise SystemExit(
         "error: %d arms (a_atoms=%d, b_atoms=%d). Past 32 arms cicc outlines the k_tile body and\n"
         "       spills the accumulators -- verified at 64 arms (STACK:864). Use fewer granules,\n"
-        "       or scripts/gen_mixed_mma_ptx.py if you need K=64 granularity."
+        "       or scripts/gen_mixed_mma_ptx.py if you need K=64 granularity.\n"
+        "       Set ALLOW_OUTLINE=1 to emit it anyway (correct, but ~30x slower)."
         % (NPAT, A_ATOMS, B_ATOMS))
 
 SEL = ["0x3210", "0x3214", "0x3254", "0x3654"]
-A_BASE, B_BASE, SFA_BASE, SFB_BASE = 64, 72, 88, 90
+# Inline-asm operand numbering, derived from the warp tile: accumulators first (4 per MMA), then
+# the A fragments (4 regs per m-atom), B (2 per n-atom), and one scale word per atom.
+N_OUT = 4 * MMA_M * MMA_N
+A_BASE = N_OUT
+B_BASE = A_BASE + 4 * MMA_M
+SFA_BASE = B_BASE + 2 * MMA_N
+SFB_BASE = SFA_BASE + MMA_M
 MMA = ("mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X."
        "m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3")
 
@@ -123,7 +135,10 @@ def main():
         "// pattern specialization picks P.\n"
         "//\n"
         "// Granule: %d rows of A x %d columns of B x 128 K (one k_tile), %d arms.\n"
+        "// Built for a warp tile of %d x %d atoms; the mainloop static_asserts this.\n"
         "#pragma once\n"
+        "#define MIXFP4_BLOBGEN_MMA_M %d\n"
+        "#define MIXFP4_BLOBGEN_MMA_N %d\n"
         "#include \"cute/tensor.hpp\"\n"
         "namespace mixfp4 {\n"
         "template <uint32_t P, class TAcc, class TA, class TB, class TSFA, class TSFB>\n"
@@ -131,10 +146,11 @@ def main():
         "mma_kblock_blob(TAcc& acc, TA const& a, TB const& b, TSFA const& sfa, TSFB const& sfb) {\n"
         "%s\n"
         "}\n"
-        "} // namespace mixfp4\n" % (A_ATOMS * 16, B_ATOMS * 8, NPAT, "\n".join(arms)))
+        "} // namespace mixfp4\n"
+        % (A_ATOMS * 16, B_ATOMS * 8, NPAT, MMA_M, MMA_N, MMA_M, MMA_N, "\n".join(arms)))
 
-    dst = pathlib.Path("/home/brian/mixfp4/.claude/worktrees/mixfp4-16x8x64/"
-                       "src/collective/mixed_mma_blob_generated.hpp")
+    dst = (pathlib.Path(__file__).resolve().parent.parent
+           / "src/collective/mixed_mma_blob_generated.hpp")
     dst.write_text(header)
     print("wrote %s: %d arms x %d MMAs, granule %d x %d x 128"
           % (dst.name, NPAT, MMA_M * MMA_N, A_ATOMS * 16, B_ATOMS * 8))
