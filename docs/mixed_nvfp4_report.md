@@ -220,8 +220,10 @@ section is about what it costs and why.
 
 ### The measured curve
 
-4096³, best of 5 on an idle RTX 5090, randomly tagged so all four format sites are live. Stock
-NVFP4 is 1207.1 TFLOP/s; "no dispatch" is the same source with `-DMIXFP4_NO_DISPATCH=1`.
+4096³, best of 5 on a verified-idle RTX 5090, randomly tagged so all four format sites are live.
+"No dispatch" is the same source built with `-DMIXFP4_NO_DISPATCH=1`. Each percentage is against
+the stock `nvfp4_gemm` measured in *its own* run — 1204.5 and 1205.8 TFLOP/s across the two sweeps
+that produced this table, which is also a fair reading of the run-to-run noise floor.
 
 | granule (A rows × B cols × K) | dispatch | arms | OMMAs | codegen | TFLOP/s | vs stock |
 |---|---|---|---|---|---|---|
@@ -229,6 +231,7 @@ NVFP4 is 1207.1 TFLOP/s; "no dispatch" is the same source with `-DMIXFP4_NO_DISP
 | **32 × 32 × 128 (default)** | C++, per k_tile | 8 | 512 | clean | **1164.1** | **+3.4%** |
 | 16 × 32 × 128 | C++ + blob | 16 | 1024 | clean | 1113.8 | +7.5% |
 | 32 × 16 × 128 | C++ + blob | 32 | 2048 | clean | 1082.5 | +10.1% |
+| 32 × 32 × 64 | PTX, 1 per k_block | 8 | 512 | clean | 922.0 | +23.5% |
 | 16 × 16 × 64 | PTX, 1 per k_block | 64 | 4096 | clean | 887.2 | +26.3% |
 | **16 × 8 × 64 (the floor)** | PTX, 2 per k_block | 2 × 64 | 4096 | clean | **807.9** | **+32.9%** |
 | 16 × 8 × 64 | PTX, 4 per k_block | 4 × 16 | 1024 | clean | 677.4 | +43.8% |
@@ -244,9 +247,36 @@ at from the other direction.
 Repeated at 8192×8192×2048 (short-K, where dispatch amortizes over fewer k_tiles), the ordering is
 identical and the costs slightly worse: +25.5% / +34.3% / +42.5% / +59.3%.
 
-Two separate cost mechanisms are at work, and separating them is what the rest of this section
-does. Above the line, cost grows with **arm count** (code footprint). Below it, cost is dominated
-by **where the dispatch sits**.
+Two separate mechanisms are at work, and separating them is what the rest of this section does.
+Among the K=128 rows, cost grows with **arm count** — that is instruction-fetch pressure from the
+code footprint. Among the K=64 rows, it is dominated by **how many dispatches sit inside the
+k_tile body**, and the footprint barely matters (the 512-OMMA and 4096-OMMA floor configs differ
+by 17 points in the *wrong* direction).
+
+### Decomposing the floor's 32.9%
+
+Rows 2 and 5 of that table are a controlled experiment. **32×32×128 and 32×32×64 have the same
+spatial granule, the same 8 arms, and the same 512 OMMAs.** The only difference is that the
+dispatch moved from outside the k_tile body to inside it, once per k_block. That alone costs
+**20.2 points**, +3.3% → +23.5%, and it is the single largest term anywhere in this section.
+
+With that isolated, the floor's cost decomposes cleanly:
+
+| step | granule | vs stock | marginal | what it buys |
+|---|---|---|---|---|
+| shipped default | 32×32×128 | +3.3% | — | — |
+| move the dispatch into the body | 32×32×64 | +23.5% | **+20.2** | K: 128 → 64 |
+| 8× the code, same dispatch count | 16×16×64 | +26.3% | +2.8 | A: 32 → 16 rows |
+| a second dispatch per k_block | 16×8×64 | +32.9% | +6.6 | B: 16 → 8 columns |
+
+So **roughly two thirds of the price of the hardware floor is the K axis**, and it is paid before
+any spatial refinement happens. The A refinement is nearly free in dispatch terms — 16×16×64 and
+32×32×64 read 961.9 and 965.6 at `TAG=none`, i.e. indistinguishable — and its 2.8 points are
+almost entirely the instruction-fetch cost of 8× the code.
+
+The practical consequence for a quantization scheme: fine *channel* granularity is comparatively
+cheap if a 128-element K group is acceptable (16×32×128 at +7.5%, 32×16×128 at +10.1%). Needing a
+64-element K group costs ~20% before anything else is refined.
 
 ### Where the dispatch sits is worth ~90 cycles
 
@@ -334,11 +364,8 @@ So the granule ladder, by budget:
 - **26–33%:** K=64 at any spatial granule — 16×16×64 costs 26.3%, the 16×8×64 floor 32.9%.
 
 The floor is therefore available and correct, but it is a granularity-first option, not a
-throughput-competitive one. Nothing beats the existing 8-arm configurations inside a 5% budget.
-Note the split of that 32.9%: going from K=128 to K=64 is most of it, and going from 32×32 to
-16×8 within K=64 adds only ~6 points. **The K axis is where the money is** — a quantization scheme
-that needs finer channel granularity but tolerates a 128-element K group is far cheaper to serve
-than one that needs a 64-element K group.
+throughput-competitive one. Nothing beats the existing 8-arm configurations inside a 5% budget,
+and **the K axis is where the money is** — see the decomposition above.
 
 Configurable via `-DMIXFP4_A_ATOMS_PER_GRANULE` / `-DMIXFP4_B_ATOMS_PER_GRANULE` (in atoms; A
 atoms are 16 rows, B atoms 8 columns) for the C++ paths, or by regenerating the header for the
