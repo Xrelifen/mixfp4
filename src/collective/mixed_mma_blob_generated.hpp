@@ -3,7 +3,7 @@
 // all fixed at compile time by P. No dispatch inside; the caller's per-k_tile C++
 // pattern specialization picks P.
 //
-// Granule: 32 rows of A x 64 columns of B x 128 K (one k_tile), 4 arms.
+// Granule: 16 rows of A x 32 columns of B x 128 K (one k_tile), 16 arms.
 #pragma once
 #include "cute/tensor.hpp"
 namespace mixfp4 {
@@ -168,6 +168,144 @@ mma_kblock_blob(TAcc& acc, TA const& a, TB const& b, TSFA const& sfa, TSFB const
       "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%24,%25,%26,%27}, {%64,%65,%66,%67}, {%84,%85}, {%24,%25,%26,%27}, {%sf6}, {0, 0}, {%96}, {0, 0};\n"
       "    prmt.b32 %sf7, %88, %88, 0x3214;\n"
       "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%28,%29,%30,%31}, {%64,%65,%66,%67}, {%86,%87}, {%28,%29,%30,%31}, {%sf7}, {0, 0}, {%97}, {0, 0};\n"
+      "    prmt.b32 %sf8, %89, %89, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%60,%61,%62,%63}, {%68,%69,%70,%71}, {%86,%87}, {%60,%61,%62,%63}, {%sf8}, {0, 0}, {%97}, {0, 0};\n"
+      "    prmt.b32 %sf9, %89, %89, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%56,%57,%58,%59}, {%68,%69,%70,%71}, {%84,%85}, {%56,%57,%58,%59}, {%sf9}, {0, 0}, {%96}, {0, 0};\n"
+      "    prmt.b32 %sf10, %89, %89, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%52,%53,%54,%55}, {%68,%69,%70,%71}, {%82,%83}, {%52,%53,%54,%55}, {%sf10}, {0, 0}, {%95}, {0, 0};\n"
+      "    prmt.b32 %sf11, %89, %89, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%48,%49,%50,%51}, {%68,%69,%70,%71}, {%80,%81}, {%48,%49,%50,%51}, {%sf11}, {0, 0}, {%94}, {0, 0};\n"
+      "    prmt.b32 %sf12, %89, %89, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%44,%45,%46,%47}, {%68,%69,%70,%71}, {%78,%79}, {%44,%45,%46,%47}, {%sf12}, {0, 0}, {%93}, {0, 0};\n"
+      "    prmt.b32 %sf13, %89, %89, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%40,%41,%42,%43}, {%68,%69,%70,%71}, {%76,%77}, {%40,%41,%42,%43}, {%sf13}, {0, 0}, {%92}, {0, 0};\n"
+      "    prmt.b32 %sf14, %89, %89, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%36,%37,%38,%39}, {%68,%69,%70,%71}, {%74,%75}, {%36,%37,%38,%39}, {%sf14}, {0, 0}, {%91}, {0, 0};\n"
+      "    prmt.b32 %sf15, %89, %89, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%32,%33,%34,%35}, {%68,%69,%70,%71}, {%72,%73}, {%32,%33,%34,%35}, {%sf15}, {0, 0}, {%90}, {0, 0};\n"
+      "}\n"
+      :
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<7>{}))
+      :
+        "r"(a(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<1>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<2>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<3>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<1>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<2>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<3>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<0>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<2>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<2>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<3>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<3>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<4>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<4>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<5>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<5>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<6>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<6>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<7>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<7>{})),
+        "r"(sfa(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(sfa(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<2>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<3>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<4>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<5>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<6>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<7>{})));
+  }
+  else if constexpr (P == 2) {
+    asm volatile(
+      "{\n"
+      "  .reg .b32 %sf<16>;\n"
+      "    prmt.b32 %sf0, %88, %88, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%0,%1,%2,%3}, {%64,%65,%66,%67}, {%72,%73}, {%0,%1,%2,%3}, {%sf0}, {0, 0}, {%90}, {0, 0};\n"
+      "    prmt.b32 %sf1, %88, %88, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%4,%5,%6,%7}, {%64,%65,%66,%67}, {%74,%75}, {%4,%5,%6,%7}, {%sf1}, {0, 0}, {%91}, {0, 0};\n"
+      "    prmt.b32 %sf2, %88, %88, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%8,%9,%10,%11}, {%64,%65,%66,%67}, {%76,%77}, {%8,%9,%10,%11}, {%sf2}, {0, 0}, {%92}, {0, 0};\n"
+      "    prmt.b32 %sf3, %88, %88, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%12,%13,%14,%15}, {%64,%65,%66,%67}, {%78,%79}, {%12,%13,%14,%15}, {%sf3}, {0, 0}, {%93}, {0, 0};\n"
+      "    prmt.b32 %sf4, %88, %88, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%16,%17,%18,%19}, {%64,%65,%66,%67}, {%80,%81}, {%16,%17,%18,%19}, {%sf4}, {0, 0}, {%94}, {0, 0};\n"
+      "    prmt.b32 %sf5, %88, %88, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%20,%21,%22,%23}, {%64,%65,%66,%67}, {%82,%83}, {%20,%21,%22,%23}, {%sf5}, {0, 0}, {%95}, {0, 0};\n"
+      "    prmt.b32 %sf6, %88, %88, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%24,%25,%26,%27}, {%64,%65,%66,%67}, {%84,%85}, {%24,%25,%26,%27}, {%sf6}, {0, 0}, {%96}, {0, 0};\n"
+      "    prmt.b32 %sf7, %88, %88, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%28,%29,%30,%31}, {%64,%65,%66,%67}, {%86,%87}, {%28,%29,%30,%31}, {%sf7}, {0, 0}, {%97}, {0, 0};\n"
       "    prmt.b32 %sf8, %89, %89, 0x3214;\n"
       "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%60,%61,%62,%63}, {%68,%69,%70,%71}, {%86,%87}, {%60,%61,%62,%63}, {%sf8}, {0, 0}, {%97}, {0, 0};\n"
       "    prmt.b32 %sf9, %89, %89, 0x3214;\n"
@@ -286,7 +424,1249 @@ mma_kblock_blob(TAcc& acc, TA const& a, TB const& b, TSFA const& sfa, TSFB const
         "r"(sfb(cute::Int<0>{}, cute::Int<6>{})),
         "r"(sfb(cute::Int<0>{}, cute::Int<7>{})));
   }
-  else if constexpr (P == 2) {
+  else if constexpr (P == 3) {
+    asm volatile(
+      "{\n"
+      "  .reg .b32 %sf<16>;\n"
+      "    prmt.b32 %sf0, %88, %88, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%0,%1,%2,%3}, {%64,%65,%66,%67}, {%72,%73}, {%0,%1,%2,%3}, {%sf0}, {0, 0}, {%90}, {0, 0};\n"
+      "    prmt.b32 %sf1, %88, %88, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%4,%5,%6,%7}, {%64,%65,%66,%67}, {%74,%75}, {%4,%5,%6,%7}, {%sf1}, {0, 0}, {%91}, {0, 0};\n"
+      "    prmt.b32 %sf2, %88, %88, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%8,%9,%10,%11}, {%64,%65,%66,%67}, {%76,%77}, {%8,%9,%10,%11}, {%sf2}, {0, 0}, {%92}, {0, 0};\n"
+      "    prmt.b32 %sf3, %88, %88, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%12,%13,%14,%15}, {%64,%65,%66,%67}, {%78,%79}, {%12,%13,%14,%15}, {%sf3}, {0, 0}, {%93}, {0, 0};\n"
+      "    prmt.b32 %sf4, %88, %88, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%16,%17,%18,%19}, {%64,%65,%66,%67}, {%80,%81}, {%16,%17,%18,%19}, {%sf4}, {0, 0}, {%94}, {0, 0};\n"
+      "    prmt.b32 %sf5, %88, %88, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%20,%21,%22,%23}, {%64,%65,%66,%67}, {%82,%83}, {%20,%21,%22,%23}, {%sf5}, {0, 0}, {%95}, {0, 0};\n"
+      "    prmt.b32 %sf6, %88, %88, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%24,%25,%26,%27}, {%64,%65,%66,%67}, {%84,%85}, {%24,%25,%26,%27}, {%sf6}, {0, 0}, {%96}, {0, 0};\n"
+      "    prmt.b32 %sf7, %88, %88, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%28,%29,%30,%31}, {%64,%65,%66,%67}, {%86,%87}, {%28,%29,%30,%31}, {%sf7}, {0, 0}, {%97}, {0, 0};\n"
+      "    prmt.b32 %sf8, %89, %89, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%60,%61,%62,%63}, {%68,%69,%70,%71}, {%86,%87}, {%60,%61,%62,%63}, {%sf8}, {0, 0}, {%97}, {0, 0};\n"
+      "    prmt.b32 %sf9, %89, %89, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%56,%57,%58,%59}, {%68,%69,%70,%71}, {%84,%85}, {%56,%57,%58,%59}, {%sf9}, {0, 0}, {%96}, {0, 0};\n"
+      "    prmt.b32 %sf10, %89, %89, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%52,%53,%54,%55}, {%68,%69,%70,%71}, {%82,%83}, {%52,%53,%54,%55}, {%sf10}, {0, 0}, {%95}, {0, 0};\n"
+      "    prmt.b32 %sf11, %89, %89, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%48,%49,%50,%51}, {%68,%69,%70,%71}, {%80,%81}, {%48,%49,%50,%51}, {%sf11}, {0, 0}, {%94}, {0, 0};\n"
+      "    prmt.b32 %sf12, %89, %89, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%44,%45,%46,%47}, {%68,%69,%70,%71}, {%78,%79}, {%44,%45,%46,%47}, {%sf12}, {0, 0}, {%93}, {0, 0};\n"
+      "    prmt.b32 %sf13, %89, %89, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%40,%41,%42,%43}, {%68,%69,%70,%71}, {%76,%77}, {%40,%41,%42,%43}, {%sf13}, {0, 0}, {%92}, {0, 0};\n"
+      "    prmt.b32 %sf14, %89, %89, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%36,%37,%38,%39}, {%68,%69,%70,%71}, {%74,%75}, {%36,%37,%38,%39}, {%sf14}, {0, 0}, {%91}, {0, 0};\n"
+      "    prmt.b32 %sf15, %89, %89, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%32,%33,%34,%35}, {%68,%69,%70,%71}, {%72,%73}, {%32,%33,%34,%35}, {%sf15}, {0, 0}, {%90}, {0, 0};\n"
+      "}\n"
+      :
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<7>{}))
+      :
+        "r"(a(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<1>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<2>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<3>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<1>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<2>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<3>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<0>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<2>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<2>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<3>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<3>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<4>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<4>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<5>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<5>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<6>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<6>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<7>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<7>{})),
+        "r"(sfa(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(sfa(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<2>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<3>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<4>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<5>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<6>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<7>{})));
+  }
+  else if constexpr (P == 4) {
+    asm volatile(
+      "{\n"
+      "  .reg .b32 %sf<16>;\n"
+      "    prmt.b32 %sf0, %88, %88, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%0,%1,%2,%3}, {%64,%65,%66,%67}, {%72,%73}, {%0,%1,%2,%3}, {%sf0}, {0, 0}, {%90}, {0, 0};\n"
+      "    prmt.b32 %sf1, %88, %88, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%4,%5,%6,%7}, {%64,%65,%66,%67}, {%74,%75}, {%4,%5,%6,%7}, {%sf1}, {0, 0}, {%91}, {0, 0};\n"
+      "    prmt.b32 %sf2, %88, %88, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%8,%9,%10,%11}, {%64,%65,%66,%67}, {%76,%77}, {%8,%9,%10,%11}, {%sf2}, {0, 0}, {%92}, {0, 0};\n"
+      "    prmt.b32 %sf3, %88, %88, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%12,%13,%14,%15}, {%64,%65,%66,%67}, {%78,%79}, {%12,%13,%14,%15}, {%sf3}, {0, 0}, {%93}, {0, 0};\n"
+      "    prmt.b32 %sf4, %88, %88, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%16,%17,%18,%19}, {%64,%65,%66,%67}, {%80,%81}, {%16,%17,%18,%19}, {%sf4}, {0, 0}, {%94}, {0, 0};\n"
+      "    prmt.b32 %sf5, %88, %88, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%20,%21,%22,%23}, {%64,%65,%66,%67}, {%82,%83}, {%20,%21,%22,%23}, {%sf5}, {0, 0}, {%95}, {0, 0};\n"
+      "    prmt.b32 %sf6, %88, %88, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%24,%25,%26,%27}, {%64,%65,%66,%67}, {%84,%85}, {%24,%25,%26,%27}, {%sf6}, {0, 0}, {%96}, {0, 0};\n"
+      "    prmt.b32 %sf7, %88, %88, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%28,%29,%30,%31}, {%64,%65,%66,%67}, {%86,%87}, {%28,%29,%30,%31}, {%sf7}, {0, 0}, {%97}, {0, 0};\n"
+      "    prmt.b32 %sf8, %89, %89, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%60,%61,%62,%63}, {%68,%69,%70,%71}, {%86,%87}, {%60,%61,%62,%63}, {%sf8}, {0, 0}, {%97}, {0, 0};\n"
+      "    prmt.b32 %sf9, %89, %89, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%56,%57,%58,%59}, {%68,%69,%70,%71}, {%84,%85}, {%56,%57,%58,%59}, {%sf9}, {0, 0}, {%96}, {0, 0};\n"
+      "    prmt.b32 %sf10, %89, %89, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%52,%53,%54,%55}, {%68,%69,%70,%71}, {%82,%83}, {%52,%53,%54,%55}, {%sf10}, {0, 0}, {%95}, {0, 0};\n"
+      "    prmt.b32 %sf11, %89, %89, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%48,%49,%50,%51}, {%68,%69,%70,%71}, {%80,%81}, {%48,%49,%50,%51}, {%sf11}, {0, 0}, {%94}, {0, 0};\n"
+      "    prmt.b32 %sf12, %89, %89, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%44,%45,%46,%47}, {%68,%69,%70,%71}, {%78,%79}, {%44,%45,%46,%47}, {%sf12}, {0, 0}, {%93}, {0, 0};\n"
+      "    prmt.b32 %sf13, %89, %89, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%40,%41,%42,%43}, {%68,%69,%70,%71}, {%76,%77}, {%40,%41,%42,%43}, {%sf13}, {0, 0}, {%92}, {0, 0};\n"
+      "    prmt.b32 %sf14, %89, %89, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%36,%37,%38,%39}, {%68,%69,%70,%71}, {%74,%75}, {%36,%37,%38,%39}, {%sf14}, {0, 0}, {%91}, {0, 0};\n"
+      "    prmt.b32 %sf15, %89, %89, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%32,%33,%34,%35}, {%68,%69,%70,%71}, {%72,%73}, {%32,%33,%34,%35}, {%sf15}, {0, 0}, {%90}, {0, 0};\n"
+      "}\n"
+      :
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<7>{}))
+      :
+        "r"(a(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<1>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<2>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<3>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<1>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<2>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<3>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<0>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<2>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<2>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<3>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<3>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<4>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<4>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<5>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<5>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<6>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<6>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<7>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<7>{})),
+        "r"(sfa(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(sfa(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<2>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<3>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<4>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<5>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<6>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<7>{})));
+  }
+  else if constexpr (P == 5) {
+    asm volatile(
+      "{\n"
+      "  .reg .b32 %sf<16>;\n"
+      "    prmt.b32 %sf0, %88, %88, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%0,%1,%2,%3}, {%64,%65,%66,%67}, {%72,%73}, {%0,%1,%2,%3}, {%sf0}, {0, 0}, {%90}, {0, 0};\n"
+      "    prmt.b32 %sf1, %88, %88, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%4,%5,%6,%7}, {%64,%65,%66,%67}, {%74,%75}, {%4,%5,%6,%7}, {%sf1}, {0, 0}, {%91}, {0, 0};\n"
+      "    prmt.b32 %sf2, %88, %88, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%8,%9,%10,%11}, {%64,%65,%66,%67}, {%76,%77}, {%8,%9,%10,%11}, {%sf2}, {0, 0}, {%92}, {0, 0};\n"
+      "    prmt.b32 %sf3, %88, %88, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%12,%13,%14,%15}, {%64,%65,%66,%67}, {%78,%79}, {%12,%13,%14,%15}, {%sf3}, {0, 0}, {%93}, {0, 0};\n"
+      "    prmt.b32 %sf4, %88, %88, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%16,%17,%18,%19}, {%64,%65,%66,%67}, {%80,%81}, {%16,%17,%18,%19}, {%sf4}, {0, 0}, {%94}, {0, 0};\n"
+      "    prmt.b32 %sf5, %88, %88, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%20,%21,%22,%23}, {%64,%65,%66,%67}, {%82,%83}, {%20,%21,%22,%23}, {%sf5}, {0, 0}, {%95}, {0, 0};\n"
+      "    prmt.b32 %sf6, %88, %88, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%24,%25,%26,%27}, {%64,%65,%66,%67}, {%84,%85}, {%24,%25,%26,%27}, {%sf6}, {0, 0}, {%96}, {0, 0};\n"
+      "    prmt.b32 %sf7, %88, %88, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%28,%29,%30,%31}, {%64,%65,%66,%67}, {%86,%87}, {%28,%29,%30,%31}, {%sf7}, {0, 0}, {%97}, {0, 0};\n"
+      "    prmt.b32 %sf8, %89, %89, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%60,%61,%62,%63}, {%68,%69,%70,%71}, {%86,%87}, {%60,%61,%62,%63}, {%sf8}, {0, 0}, {%97}, {0, 0};\n"
+      "    prmt.b32 %sf9, %89, %89, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%56,%57,%58,%59}, {%68,%69,%70,%71}, {%84,%85}, {%56,%57,%58,%59}, {%sf9}, {0, 0}, {%96}, {0, 0};\n"
+      "    prmt.b32 %sf10, %89, %89, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%52,%53,%54,%55}, {%68,%69,%70,%71}, {%82,%83}, {%52,%53,%54,%55}, {%sf10}, {0, 0}, {%95}, {0, 0};\n"
+      "    prmt.b32 %sf11, %89, %89, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%48,%49,%50,%51}, {%68,%69,%70,%71}, {%80,%81}, {%48,%49,%50,%51}, {%sf11}, {0, 0}, {%94}, {0, 0};\n"
+      "    prmt.b32 %sf12, %89, %89, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%44,%45,%46,%47}, {%68,%69,%70,%71}, {%78,%79}, {%44,%45,%46,%47}, {%sf12}, {0, 0}, {%93}, {0, 0};\n"
+      "    prmt.b32 %sf13, %89, %89, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%40,%41,%42,%43}, {%68,%69,%70,%71}, {%76,%77}, {%40,%41,%42,%43}, {%sf13}, {0, 0}, {%92}, {0, 0};\n"
+      "    prmt.b32 %sf14, %89, %89, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%36,%37,%38,%39}, {%68,%69,%70,%71}, {%74,%75}, {%36,%37,%38,%39}, {%sf14}, {0, 0}, {%91}, {0, 0};\n"
+      "    prmt.b32 %sf15, %89, %89, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%32,%33,%34,%35}, {%68,%69,%70,%71}, {%72,%73}, {%32,%33,%34,%35}, {%sf15}, {0, 0}, {%90}, {0, 0};\n"
+      "}\n"
+      :
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<7>{}))
+      :
+        "r"(a(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<1>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<2>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<3>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<1>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<2>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<3>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<0>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<2>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<2>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<3>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<3>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<4>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<4>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<5>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<5>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<6>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<6>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<7>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<7>{})),
+        "r"(sfa(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(sfa(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<2>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<3>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<4>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<5>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<6>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<7>{})));
+  }
+  else if constexpr (P == 6) {
+    asm volatile(
+      "{\n"
+      "  .reg .b32 %sf<16>;\n"
+      "    prmt.b32 %sf0, %88, %88, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%0,%1,%2,%3}, {%64,%65,%66,%67}, {%72,%73}, {%0,%1,%2,%3}, {%sf0}, {0, 0}, {%90}, {0, 0};\n"
+      "    prmt.b32 %sf1, %88, %88, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%4,%5,%6,%7}, {%64,%65,%66,%67}, {%74,%75}, {%4,%5,%6,%7}, {%sf1}, {0, 0}, {%91}, {0, 0};\n"
+      "    prmt.b32 %sf2, %88, %88, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%8,%9,%10,%11}, {%64,%65,%66,%67}, {%76,%77}, {%8,%9,%10,%11}, {%sf2}, {0, 0}, {%92}, {0, 0};\n"
+      "    prmt.b32 %sf3, %88, %88, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%12,%13,%14,%15}, {%64,%65,%66,%67}, {%78,%79}, {%12,%13,%14,%15}, {%sf3}, {0, 0}, {%93}, {0, 0};\n"
+      "    prmt.b32 %sf4, %88, %88, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%16,%17,%18,%19}, {%64,%65,%66,%67}, {%80,%81}, {%16,%17,%18,%19}, {%sf4}, {0, 0}, {%94}, {0, 0};\n"
+      "    prmt.b32 %sf5, %88, %88, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%20,%21,%22,%23}, {%64,%65,%66,%67}, {%82,%83}, {%20,%21,%22,%23}, {%sf5}, {0, 0}, {%95}, {0, 0};\n"
+      "    prmt.b32 %sf6, %88, %88, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%24,%25,%26,%27}, {%64,%65,%66,%67}, {%84,%85}, {%24,%25,%26,%27}, {%sf6}, {0, 0}, {%96}, {0, 0};\n"
+      "    prmt.b32 %sf7, %88, %88, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%28,%29,%30,%31}, {%64,%65,%66,%67}, {%86,%87}, {%28,%29,%30,%31}, {%sf7}, {0, 0}, {%97}, {0, 0};\n"
+      "    prmt.b32 %sf8, %89, %89, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%60,%61,%62,%63}, {%68,%69,%70,%71}, {%86,%87}, {%60,%61,%62,%63}, {%sf8}, {0, 0}, {%97}, {0, 0};\n"
+      "    prmt.b32 %sf9, %89, %89, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%56,%57,%58,%59}, {%68,%69,%70,%71}, {%84,%85}, {%56,%57,%58,%59}, {%sf9}, {0, 0}, {%96}, {0, 0};\n"
+      "    prmt.b32 %sf10, %89, %89, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%52,%53,%54,%55}, {%68,%69,%70,%71}, {%82,%83}, {%52,%53,%54,%55}, {%sf10}, {0, 0}, {%95}, {0, 0};\n"
+      "    prmt.b32 %sf11, %89, %89, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%48,%49,%50,%51}, {%68,%69,%70,%71}, {%80,%81}, {%48,%49,%50,%51}, {%sf11}, {0, 0}, {%94}, {0, 0};\n"
+      "    prmt.b32 %sf12, %89, %89, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%44,%45,%46,%47}, {%68,%69,%70,%71}, {%78,%79}, {%44,%45,%46,%47}, {%sf12}, {0, 0}, {%93}, {0, 0};\n"
+      "    prmt.b32 %sf13, %89, %89, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%40,%41,%42,%43}, {%68,%69,%70,%71}, {%76,%77}, {%40,%41,%42,%43}, {%sf13}, {0, 0}, {%92}, {0, 0};\n"
+      "    prmt.b32 %sf14, %89, %89, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%36,%37,%38,%39}, {%68,%69,%70,%71}, {%74,%75}, {%36,%37,%38,%39}, {%sf14}, {0, 0}, {%91}, {0, 0};\n"
+      "    prmt.b32 %sf15, %89, %89, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%32,%33,%34,%35}, {%68,%69,%70,%71}, {%72,%73}, {%32,%33,%34,%35}, {%sf15}, {0, 0}, {%90}, {0, 0};\n"
+      "}\n"
+      :
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<7>{}))
+      :
+        "r"(a(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<1>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<2>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<3>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<1>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<2>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<3>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<0>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<2>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<2>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<3>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<3>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<4>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<4>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<5>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<5>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<6>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<6>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<7>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<7>{})),
+        "r"(sfa(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(sfa(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<2>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<3>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<4>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<5>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<6>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<7>{})));
+  }
+  else if constexpr (P == 7) {
+    asm volatile(
+      "{\n"
+      "  .reg .b32 %sf<16>;\n"
+      "    prmt.b32 %sf0, %88, %88, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%0,%1,%2,%3}, {%64,%65,%66,%67}, {%72,%73}, {%0,%1,%2,%3}, {%sf0}, {0, 0}, {%90}, {0, 0};\n"
+      "    prmt.b32 %sf1, %88, %88, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%4,%5,%6,%7}, {%64,%65,%66,%67}, {%74,%75}, {%4,%5,%6,%7}, {%sf1}, {0, 0}, {%91}, {0, 0};\n"
+      "    prmt.b32 %sf2, %88, %88, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%8,%9,%10,%11}, {%64,%65,%66,%67}, {%76,%77}, {%8,%9,%10,%11}, {%sf2}, {0, 0}, {%92}, {0, 0};\n"
+      "    prmt.b32 %sf3, %88, %88, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%12,%13,%14,%15}, {%64,%65,%66,%67}, {%78,%79}, {%12,%13,%14,%15}, {%sf3}, {0, 0}, {%93}, {0, 0};\n"
+      "    prmt.b32 %sf4, %88, %88, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%16,%17,%18,%19}, {%64,%65,%66,%67}, {%80,%81}, {%16,%17,%18,%19}, {%sf4}, {0, 0}, {%94}, {0, 0};\n"
+      "    prmt.b32 %sf5, %88, %88, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%20,%21,%22,%23}, {%64,%65,%66,%67}, {%82,%83}, {%20,%21,%22,%23}, {%sf5}, {0, 0}, {%95}, {0, 0};\n"
+      "    prmt.b32 %sf6, %88, %88, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%24,%25,%26,%27}, {%64,%65,%66,%67}, {%84,%85}, {%24,%25,%26,%27}, {%sf6}, {0, 0}, {%96}, {0, 0};\n"
+      "    prmt.b32 %sf7, %88, %88, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%28,%29,%30,%31}, {%64,%65,%66,%67}, {%86,%87}, {%28,%29,%30,%31}, {%sf7}, {0, 0}, {%97}, {0, 0};\n"
+      "    prmt.b32 %sf8, %89, %89, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%60,%61,%62,%63}, {%68,%69,%70,%71}, {%86,%87}, {%60,%61,%62,%63}, {%sf8}, {0, 0}, {%97}, {0, 0};\n"
+      "    prmt.b32 %sf9, %89, %89, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%56,%57,%58,%59}, {%68,%69,%70,%71}, {%84,%85}, {%56,%57,%58,%59}, {%sf9}, {0, 0}, {%96}, {0, 0};\n"
+      "    prmt.b32 %sf10, %89, %89, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%52,%53,%54,%55}, {%68,%69,%70,%71}, {%82,%83}, {%52,%53,%54,%55}, {%sf10}, {0, 0}, {%95}, {0, 0};\n"
+      "    prmt.b32 %sf11, %89, %89, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%48,%49,%50,%51}, {%68,%69,%70,%71}, {%80,%81}, {%48,%49,%50,%51}, {%sf11}, {0, 0}, {%94}, {0, 0};\n"
+      "    prmt.b32 %sf12, %89, %89, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%44,%45,%46,%47}, {%68,%69,%70,%71}, {%78,%79}, {%44,%45,%46,%47}, {%sf12}, {0, 0}, {%93}, {0, 0};\n"
+      "    prmt.b32 %sf13, %89, %89, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%40,%41,%42,%43}, {%68,%69,%70,%71}, {%76,%77}, {%40,%41,%42,%43}, {%sf13}, {0, 0}, {%92}, {0, 0};\n"
+      "    prmt.b32 %sf14, %89, %89, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%36,%37,%38,%39}, {%68,%69,%70,%71}, {%74,%75}, {%36,%37,%38,%39}, {%sf14}, {0, 0}, {%91}, {0, 0};\n"
+      "    prmt.b32 %sf15, %89, %89, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%32,%33,%34,%35}, {%68,%69,%70,%71}, {%72,%73}, {%32,%33,%34,%35}, {%sf15}, {0, 0}, {%90}, {0, 0};\n"
+      "}\n"
+      :
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<7>{}))
+      :
+        "r"(a(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<1>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<2>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<3>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<1>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<2>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<3>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<0>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<2>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<2>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<3>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<3>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<4>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<4>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<5>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<5>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<6>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<6>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<7>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<7>{})),
+        "r"(sfa(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(sfa(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<2>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<3>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<4>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<5>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<6>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<7>{})));
+  }
+  else if constexpr (P == 8) {
+    asm volatile(
+      "{\n"
+      "  .reg .b32 %sf<16>;\n"
+      "    prmt.b32 %sf0, %88, %88, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%0,%1,%2,%3}, {%64,%65,%66,%67}, {%72,%73}, {%0,%1,%2,%3}, {%sf0}, {0, 0}, {%90}, {0, 0};\n"
+      "    prmt.b32 %sf1, %88, %88, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%4,%5,%6,%7}, {%64,%65,%66,%67}, {%74,%75}, {%4,%5,%6,%7}, {%sf1}, {0, 0}, {%91}, {0, 0};\n"
+      "    prmt.b32 %sf2, %88, %88, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%8,%9,%10,%11}, {%64,%65,%66,%67}, {%76,%77}, {%8,%9,%10,%11}, {%sf2}, {0, 0}, {%92}, {0, 0};\n"
+      "    prmt.b32 %sf3, %88, %88, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%12,%13,%14,%15}, {%64,%65,%66,%67}, {%78,%79}, {%12,%13,%14,%15}, {%sf3}, {0, 0}, {%93}, {0, 0};\n"
+      "    prmt.b32 %sf4, %88, %88, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%16,%17,%18,%19}, {%64,%65,%66,%67}, {%80,%81}, {%16,%17,%18,%19}, {%sf4}, {0, 0}, {%94}, {0, 0};\n"
+      "    prmt.b32 %sf5, %88, %88, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%20,%21,%22,%23}, {%64,%65,%66,%67}, {%82,%83}, {%20,%21,%22,%23}, {%sf5}, {0, 0}, {%95}, {0, 0};\n"
+      "    prmt.b32 %sf6, %88, %88, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%24,%25,%26,%27}, {%64,%65,%66,%67}, {%84,%85}, {%24,%25,%26,%27}, {%sf6}, {0, 0}, {%96}, {0, 0};\n"
+      "    prmt.b32 %sf7, %88, %88, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%28,%29,%30,%31}, {%64,%65,%66,%67}, {%86,%87}, {%28,%29,%30,%31}, {%sf7}, {0, 0}, {%97}, {0, 0};\n"
+      "    prmt.b32 %sf8, %89, %89, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%60,%61,%62,%63}, {%68,%69,%70,%71}, {%86,%87}, {%60,%61,%62,%63}, {%sf8}, {0, 0}, {%97}, {0, 0};\n"
+      "    prmt.b32 %sf9, %89, %89, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%56,%57,%58,%59}, {%68,%69,%70,%71}, {%84,%85}, {%56,%57,%58,%59}, {%sf9}, {0, 0}, {%96}, {0, 0};\n"
+      "    prmt.b32 %sf10, %89, %89, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%52,%53,%54,%55}, {%68,%69,%70,%71}, {%82,%83}, {%52,%53,%54,%55}, {%sf10}, {0, 0}, {%95}, {0, 0};\n"
+      "    prmt.b32 %sf11, %89, %89, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%48,%49,%50,%51}, {%68,%69,%70,%71}, {%80,%81}, {%48,%49,%50,%51}, {%sf11}, {0, 0}, {%94}, {0, 0};\n"
+      "    prmt.b32 %sf12, %89, %89, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%44,%45,%46,%47}, {%68,%69,%70,%71}, {%78,%79}, {%44,%45,%46,%47}, {%sf12}, {0, 0}, {%93}, {0, 0};\n"
+      "    prmt.b32 %sf13, %89, %89, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%40,%41,%42,%43}, {%68,%69,%70,%71}, {%76,%77}, {%40,%41,%42,%43}, {%sf13}, {0, 0}, {%92}, {0, 0};\n"
+      "    prmt.b32 %sf14, %89, %89, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%36,%37,%38,%39}, {%68,%69,%70,%71}, {%74,%75}, {%36,%37,%38,%39}, {%sf14}, {0, 0}, {%91}, {0, 0};\n"
+      "    prmt.b32 %sf15, %89, %89, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%32,%33,%34,%35}, {%68,%69,%70,%71}, {%72,%73}, {%32,%33,%34,%35}, {%sf15}, {0, 0}, {%90}, {0, 0};\n"
+      "}\n"
+      :
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<7>{}))
+      :
+        "r"(a(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<1>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<2>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<3>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<1>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<2>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<3>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<0>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<2>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<2>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<3>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<3>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<4>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<4>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<5>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<5>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<6>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<6>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<7>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<7>{})),
+        "r"(sfa(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(sfa(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<2>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<3>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<4>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<5>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<6>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<7>{})));
+  }
+  else if constexpr (P == 9) {
+    asm volatile(
+      "{\n"
+      "  .reg .b32 %sf<16>;\n"
+      "    prmt.b32 %sf0, %88, %88, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%0,%1,%2,%3}, {%64,%65,%66,%67}, {%72,%73}, {%0,%1,%2,%3}, {%sf0}, {0, 0}, {%90}, {0, 0};\n"
+      "    prmt.b32 %sf1, %88, %88, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%4,%5,%6,%7}, {%64,%65,%66,%67}, {%74,%75}, {%4,%5,%6,%7}, {%sf1}, {0, 0}, {%91}, {0, 0};\n"
+      "    prmt.b32 %sf2, %88, %88, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%8,%9,%10,%11}, {%64,%65,%66,%67}, {%76,%77}, {%8,%9,%10,%11}, {%sf2}, {0, 0}, {%92}, {0, 0};\n"
+      "    prmt.b32 %sf3, %88, %88, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%12,%13,%14,%15}, {%64,%65,%66,%67}, {%78,%79}, {%12,%13,%14,%15}, {%sf3}, {0, 0}, {%93}, {0, 0};\n"
+      "    prmt.b32 %sf4, %88, %88, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%16,%17,%18,%19}, {%64,%65,%66,%67}, {%80,%81}, {%16,%17,%18,%19}, {%sf4}, {0, 0}, {%94}, {0, 0};\n"
+      "    prmt.b32 %sf5, %88, %88, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%20,%21,%22,%23}, {%64,%65,%66,%67}, {%82,%83}, {%20,%21,%22,%23}, {%sf5}, {0, 0}, {%95}, {0, 0};\n"
+      "    prmt.b32 %sf6, %88, %88, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%24,%25,%26,%27}, {%64,%65,%66,%67}, {%84,%85}, {%24,%25,%26,%27}, {%sf6}, {0, 0}, {%96}, {0, 0};\n"
+      "    prmt.b32 %sf7, %88, %88, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%28,%29,%30,%31}, {%64,%65,%66,%67}, {%86,%87}, {%28,%29,%30,%31}, {%sf7}, {0, 0}, {%97}, {0, 0};\n"
+      "    prmt.b32 %sf8, %89, %89, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%60,%61,%62,%63}, {%68,%69,%70,%71}, {%86,%87}, {%60,%61,%62,%63}, {%sf8}, {0, 0}, {%97}, {0, 0};\n"
+      "    prmt.b32 %sf9, %89, %89, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%56,%57,%58,%59}, {%68,%69,%70,%71}, {%84,%85}, {%56,%57,%58,%59}, {%sf9}, {0, 0}, {%96}, {0, 0};\n"
+      "    prmt.b32 %sf10, %89, %89, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%52,%53,%54,%55}, {%68,%69,%70,%71}, {%82,%83}, {%52,%53,%54,%55}, {%sf10}, {0, 0}, {%95}, {0, 0};\n"
+      "    prmt.b32 %sf11, %89, %89, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%48,%49,%50,%51}, {%68,%69,%70,%71}, {%80,%81}, {%48,%49,%50,%51}, {%sf11}, {0, 0}, {%94}, {0, 0};\n"
+      "    prmt.b32 %sf12, %89, %89, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%44,%45,%46,%47}, {%68,%69,%70,%71}, {%78,%79}, {%44,%45,%46,%47}, {%sf12}, {0, 0}, {%93}, {0, 0};\n"
+      "    prmt.b32 %sf13, %89, %89, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%40,%41,%42,%43}, {%68,%69,%70,%71}, {%76,%77}, {%40,%41,%42,%43}, {%sf13}, {0, 0}, {%92}, {0, 0};\n"
+      "    prmt.b32 %sf14, %89, %89, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%36,%37,%38,%39}, {%68,%69,%70,%71}, {%74,%75}, {%36,%37,%38,%39}, {%sf14}, {0, 0}, {%91}, {0, 0};\n"
+      "    prmt.b32 %sf15, %89, %89, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%32,%33,%34,%35}, {%68,%69,%70,%71}, {%72,%73}, {%32,%33,%34,%35}, {%sf15}, {0, 0}, {%90}, {0, 0};\n"
+      "}\n"
+      :
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<7>{}))
+      :
+        "r"(a(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<1>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<2>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<3>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<1>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<2>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<3>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<0>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<2>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<2>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<3>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<3>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<4>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<4>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<5>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<5>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<6>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<6>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<7>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<7>{})),
+        "r"(sfa(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(sfa(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<2>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<3>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<4>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<5>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<6>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<7>{})));
+  }
+  else if constexpr (P == 10) {
+    asm volatile(
+      "{\n"
+      "  .reg .b32 %sf<16>;\n"
+      "    prmt.b32 %sf0, %88, %88, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%0,%1,%2,%3}, {%64,%65,%66,%67}, {%72,%73}, {%0,%1,%2,%3}, {%sf0}, {0, 0}, {%90}, {0, 0};\n"
+      "    prmt.b32 %sf1, %88, %88, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%4,%5,%6,%7}, {%64,%65,%66,%67}, {%74,%75}, {%4,%5,%6,%7}, {%sf1}, {0, 0}, {%91}, {0, 0};\n"
+      "    prmt.b32 %sf2, %88, %88, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%8,%9,%10,%11}, {%64,%65,%66,%67}, {%76,%77}, {%8,%9,%10,%11}, {%sf2}, {0, 0}, {%92}, {0, 0};\n"
+      "    prmt.b32 %sf3, %88, %88, 0x3210;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%12,%13,%14,%15}, {%64,%65,%66,%67}, {%78,%79}, {%12,%13,%14,%15}, {%sf3}, {0, 0}, {%93}, {0, 0};\n"
+      "    prmt.b32 %sf4, %88, %88, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%16,%17,%18,%19}, {%64,%65,%66,%67}, {%80,%81}, {%16,%17,%18,%19}, {%sf4}, {0, 0}, {%94}, {0, 0};\n"
+      "    prmt.b32 %sf5, %88, %88, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%20,%21,%22,%23}, {%64,%65,%66,%67}, {%82,%83}, {%20,%21,%22,%23}, {%sf5}, {0, 0}, {%95}, {0, 0};\n"
+      "    prmt.b32 %sf6, %88, %88, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%24,%25,%26,%27}, {%64,%65,%66,%67}, {%84,%85}, {%24,%25,%26,%27}, {%sf6}, {0, 0}, {%96}, {0, 0};\n"
+      "    prmt.b32 %sf7, %88, %88, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%28,%29,%30,%31}, {%64,%65,%66,%67}, {%86,%87}, {%28,%29,%30,%31}, {%sf7}, {0, 0}, {%97}, {0, 0};\n"
+      "    prmt.b32 %sf8, %89, %89, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%60,%61,%62,%63}, {%68,%69,%70,%71}, {%86,%87}, {%60,%61,%62,%63}, {%sf8}, {0, 0}, {%97}, {0, 0};\n"
+      "    prmt.b32 %sf9, %89, %89, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%56,%57,%58,%59}, {%68,%69,%70,%71}, {%84,%85}, {%56,%57,%58,%59}, {%sf9}, {0, 0}, {%96}, {0, 0};\n"
+      "    prmt.b32 %sf10, %89, %89, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%52,%53,%54,%55}, {%68,%69,%70,%71}, {%82,%83}, {%52,%53,%54,%55}, {%sf10}, {0, 0}, {%95}, {0, 0};\n"
+      "    prmt.b32 %sf11, %89, %89, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%48,%49,%50,%51}, {%68,%69,%70,%71}, {%80,%81}, {%48,%49,%50,%51}, {%sf11}, {0, 0}, {%94}, {0, 0};\n"
+      "    prmt.b32 %sf12, %89, %89, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%44,%45,%46,%47}, {%68,%69,%70,%71}, {%78,%79}, {%44,%45,%46,%47}, {%sf12}, {0, 0}, {%93}, {0, 0};\n"
+      "    prmt.b32 %sf13, %89, %89, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%40,%41,%42,%43}, {%68,%69,%70,%71}, {%76,%77}, {%40,%41,%42,%43}, {%sf13}, {0, 0}, {%92}, {0, 0};\n"
+      "    prmt.b32 %sf14, %89, %89, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%36,%37,%38,%39}, {%68,%69,%70,%71}, {%74,%75}, {%36,%37,%38,%39}, {%sf14}, {0, 0}, {%91}, {0, 0};\n"
+      "    prmt.b32 %sf15, %89, %89, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%32,%33,%34,%35}, {%68,%69,%70,%71}, {%72,%73}, {%32,%33,%34,%35}, {%sf15}, {0, 0}, {%90}, {0, 0};\n"
+      "}\n"
+      :
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<7>{}))
+      :
+        "r"(a(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<1>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<2>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<3>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<1>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<2>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<3>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<0>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<2>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<2>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<3>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<3>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<4>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<4>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<5>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<5>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<6>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<6>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<7>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<7>{})),
+        "r"(sfa(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(sfa(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<2>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<3>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<4>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<5>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<6>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<7>{})));
+  }
+  else if constexpr (P == 11) {
+    asm volatile(
+      "{\n"
+      "  .reg .b32 %sf<16>;\n"
+      "    prmt.b32 %sf0, %88, %88, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%0,%1,%2,%3}, {%64,%65,%66,%67}, {%72,%73}, {%0,%1,%2,%3}, {%sf0}, {0, 0}, {%90}, {0, 0};\n"
+      "    prmt.b32 %sf1, %88, %88, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%4,%5,%6,%7}, {%64,%65,%66,%67}, {%74,%75}, {%4,%5,%6,%7}, {%sf1}, {0, 0}, {%91}, {0, 0};\n"
+      "    prmt.b32 %sf2, %88, %88, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%8,%9,%10,%11}, {%64,%65,%66,%67}, {%76,%77}, {%8,%9,%10,%11}, {%sf2}, {0, 0}, {%92}, {0, 0};\n"
+      "    prmt.b32 %sf3, %88, %88, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%12,%13,%14,%15}, {%64,%65,%66,%67}, {%78,%79}, {%12,%13,%14,%15}, {%sf3}, {0, 0}, {%93}, {0, 0};\n"
+      "    prmt.b32 %sf4, %88, %88, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%16,%17,%18,%19}, {%64,%65,%66,%67}, {%80,%81}, {%16,%17,%18,%19}, {%sf4}, {0, 0}, {%94}, {0, 0};\n"
+      "    prmt.b32 %sf5, %88, %88, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%20,%21,%22,%23}, {%64,%65,%66,%67}, {%82,%83}, {%20,%21,%22,%23}, {%sf5}, {0, 0}, {%95}, {0, 0};\n"
+      "    prmt.b32 %sf6, %88, %88, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%24,%25,%26,%27}, {%64,%65,%66,%67}, {%84,%85}, {%24,%25,%26,%27}, {%sf6}, {0, 0}, {%96}, {0, 0};\n"
+      "    prmt.b32 %sf7, %88, %88, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%28,%29,%30,%31}, {%64,%65,%66,%67}, {%86,%87}, {%28,%29,%30,%31}, {%sf7}, {0, 0}, {%97}, {0, 0};\n"
+      "    prmt.b32 %sf8, %89, %89, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%60,%61,%62,%63}, {%68,%69,%70,%71}, {%86,%87}, {%60,%61,%62,%63}, {%sf8}, {0, 0}, {%97}, {0, 0};\n"
+      "    prmt.b32 %sf9, %89, %89, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%56,%57,%58,%59}, {%68,%69,%70,%71}, {%84,%85}, {%56,%57,%58,%59}, {%sf9}, {0, 0}, {%96}, {0, 0};\n"
+      "    prmt.b32 %sf10, %89, %89, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%52,%53,%54,%55}, {%68,%69,%70,%71}, {%82,%83}, {%52,%53,%54,%55}, {%sf10}, {0, 0}, {%95}, {0, 0};\n"
+      "    prmt.b32 %sf11, %89, %89, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%48,%49,%50,%51}, {%68,%69,%70,%71}, {%80,%81}, {%48,%49,%50,%51}, {%sf11}, {0, 0}, {%94}, {0, 0};\n"
+      "    prmt.b32 %sf12, %89, %89, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%44,%45,%46,%47}, {%68,%69,%70,%71}, {%78,%79}, {%44,%45,%46,%47}, {%sf12}, {0, 0}, {%93}, {0, 0};\n"
+      "    prmt.b32 %sf13, %89, %89, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%40,%41,%42,%43}, {%68,%69,%70,%71}, {%76,%77}, {%40,%41,%42,%43}, {%sf13}, {0, 0}, {%92}, {0, 0};\n"
+      "    prmt.b32 %sf14, %89, %89, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%36,%37,%38,%39}, {%68,%69,%70,%71}, {%74,%75}, {%36,%37,%38,%39}, {%sf14}, {0, 0}, {%91}, {0, 0};\n"
+      "    prmt.b32 %sf15, %89, %89, 0x3214;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%32,%33,%34,%35}, {%68,%69,%70,%71}, {%72,%73}, {%32,%33,%34,%35}, {%sf15}, {0, 0}, {%90}, {0, 0};\n"
+      "}\n"
+      :
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<7>{}))
+      :
+        "r"(a(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<1>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<2>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<3>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<1>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<2>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<3>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<0>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<2>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<2>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<3>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<3>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<4>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<4>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<5>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<5>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<6>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<6>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<7>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<7>{})),
+        "r"(sfa(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(sfa(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<2>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<3>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<4>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<5>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<6>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<7>{})));
+  }
+  else if constexpr (P == 12) {
     asm volatile(
       "{\n"
       "  .reg .b32 %sf<16>;\n"
@@ -424,7 +1804,283 @@ mma_kblock_blob(TAcc& acc, TA const& a, TB const& b, TSFA const& sfa, TSFB const
         "r"(sfb(cute::Int<0>{}, cute::Int<6>{})),
         "r"(sfb(cute::Int<0>{}, cute::Int<7>{})));
   }
-  else if constexpr (P == 3) {
+  else if constexpr (P == 13) {
+    asm volatile(
+      "{\n"
+      "  .reg .b32 %sf<16>;\n"
+      "    prmt.b32 %sf0, %88, %88, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%0,%1,%2,%3}, {%64,%65,%66,%67}, {%72,%73}, {%0,%1,%2,%3}, {%sf0}, {0, 0}, {%90}, {0, 0};\n"
+      "    prmt.b32 %sf1, %88, %88, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%4,%5,%6,%7}, {%64,%65,%66,%67}, {%74,%75}, {%4,%5,%6,%7}, {%sf1}, {0, 0}, {%91}, {0, 0};\n"
+      "    prmt.b32 %sf2, %88, %88, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%8,%9,%10,%11}, {%64,%65,%66,%67}, {%76,%77}, {%8,%9,%10,%11}, {%sf2}, {0, 0}, {%92}, {0, 0};\n"
+      "    prmt.b32 %sf3, %88, %88, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%12,%13,%14,%15}, {%64,%65,%66,%67}, {%78,%79}, {%12,%13,%14,%15}, {%sf3}, {0, 0}, {%93}, {0, 0};\n"
+      "    prmt.b32 %sf4, %88, %88, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%16,%17,%18,%19}, {%64,%65,%66,%67}, {%80,%81}, {%16,%17,%18,%19}, {%sf4}, {0, 0}, {%94}, {0, 0};\n"
+      "    prmt.b32 %sf5, %88, %88, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%20,%21,%22,%23}, {%64,%65,%66,%67}, {%82,%83}, {%20,%21,%22,%23}, {%sf5}, {0, 0}, {%95}, {0, 0};\n"
+      "    prmt.b32 %sf6, %88, %88, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%24,%25,%26,%27}, {%64,%65,%66,%67}, {%84,%85}, {%24,%25,%26,%27}, {%sf6}, {0, 0}, {%96}, {0, 0};\n"
+      "    prmt.b32 %sf7, %88, %88, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%28,%29,%30,%31}, {%64,%65,%66,%67}, {%86,%87}, {%28,%29,%30,%31}, {%sf7}, {0, 0}, {%97}, {0, 0};\n"
+      "    prmt.b32 %sf8, %89, %89, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%60,%61,%62,%63}, {%68,%69,%70,%71}, {%86,%87}, {%60,%61,%62,%63}, {%sf8}, {0, 0}, {%97}, {0, 0};\n"
+      "    prmt.b32 %sf9, %89, %89, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%56,%57,%58,%59}, {%68,%69,%70,%71}, {%84,%85}, {%56,%57,%58,%59}, {%sf9}, {0, 0}, {%96}, {0, 0};\n"
+      "    prmt.b32 %sf10, %89, %89, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%52,%53,%54,%55}, {%68,%69,%70,%71}, {%82,%83}, {%52,%53,%54,%55}, {%sf10}, {0, 0}, {%95}, {0, 0};\n"
+      "    prmt.b32 %sf11, %89, %89, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%48,%49,%50,%51}, {%68,%69,%70,%71}, {%80,%81}, {%48,%49,%50,%51}, {%sf11}, {0, 0}, {%94}, {0, 0};\n"
+      "    prmt.b32 %sf12, %89, %89, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%44,%45,%46,%47}, {%68,%69,%70,%71}, {%78,%79}, {%44,%45,%46,%47}, {%sf12}, {0, 0}, {%93}, {0, 0};\n"
+      "    prmt.b32 %sf13, %89, %89, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%40,%41,%42,%43}, {%68,%69,%70,%71}, {%76,%77}, {%40,%41,%42,%43}, {%sf13}, {0, 0}, {%92}, {0, 0};\n"
+      "    prmt.b32 %sf14, %89, %89, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%36,%37,%38,%39}, {%68,%69,%70,%71}, {%74,%75}, {%36,%37,%38,%39}, {%sf14}, {0, 0}, {%91}, {0, 0};\n"
+      "    prmt.b32 %sf15, %89, %89, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%32,%33,%34,%35}, {%68,%69,%70,%71}, {%72,%73}, {%32,%33,%34,%35}, {%sf15}, {0, 0}, {%90}, {0, 0};\n"
+      "}\n"
+      :
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<7>{}))
+      :
+        "r"(a(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<1>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<2>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<3>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<1>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<2>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<3>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<0>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<2>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<2>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<3>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<3>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<4>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<4>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<5>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<5>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<6>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<6>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<7>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<7>{})),
+        "r"(sfa(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(sfa(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<2>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<3>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<4>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<5>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<6>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<7>{})));
+  }
+  else if constexpr (P == 14) {
+    asm volatile(
+      "{\n"
+      "  .reg .b32 %sf<16>;\n"
+      "    prmt.b32 %sf0, %88, %88, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%0,%1,%2,%3}, {%64,%65,%66,%67}, {%72,%73}, {%0,%1,%2,%3}, {%sf0}, {0, 0}, {%90}, {0, 0};\n"
+      "    prmt.b32 %sf1, %88, %88, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%4,%5,%6,%7}, {%64,%65,%66,%67}, {%74,%75}, {%4,%5,%6,%7}, {%sf1}, {0, 0}, {%91}, {0, 0};\n"
+      "    prmt.b32 %sf2, %88, %88, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%8,%9,%10,%11}, {%64,%65,%66,%67}, {%76,%77}, {%8,%9,%10,%11}, {%sf2}, {0, 0}, {%92}, {0, 0};\n"
+      "    prmt.b32 %sf3, %88, %88, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%12,%13,%14,%15}, {%64,%65,%66,%67}, {%78,%79}, {%12,%13,%14,%15}, {%sf3}, {0, 0}, {%93}, {0, 0};\n"
+      "    prmt.b32 %sf4, %88, %88, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%16,%17,%18,%19}, {%64,%65,%66,%67}, {%80,%81}, {%16,%17,%18,%19}, {%sf4}, {0, 0}, {%94}, {0, 0};\n"
+      "    prmt.b32 %sf5, %88, %88, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%20,%21,%22,%23}, {%64,%65,%66,%67}, {%82,%83}, {%20,%21,%22,%23}, {%sf5}, {0, 0}, {%95}, {0, 0};\n"
+      "    prmt.b32 %sf6, %88, %88, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%24,%25,%26,%27}, {%64,%65,%66,%67}, {%84,%85}, {%24,%25,%26,%27}, {%sf6}, {0, 0}, {%96}, {0, 0};\n"
+      "    prmt.b32 %sf7, %88, %88, 0x3254;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%28,%29,%30,%31}, {%64,%65,%66,%67}, {%86,%87}, {%28,%29,%30,%31}, {%sf7}, {0, 0}, {%97}, {0, 0};\n"
+      "    prmt.b32 %sf8, %89, %89, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%60,%61,%62,%63}, {%68,%69,%70,%71}, {%86,%87}, {%60,%61,%62,%63}, {%sf8}, {0, 0}, {%97}, {0, 0};\n"
+      "    prmt.b32 %sf9, %89, %89, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%56,%57,%58,%59}, {%68,%69,%70,%71}, {%84,%85}, {%56,%57,%58,%59}, {%sf9}, {0, 0}, {%96}, {0, 0};\n"
+      "    prmt.b32 %sf10, %89, %89, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%52,%53,%54,%55}, {%68,%69,%70,%71}, {%82,%83}, {%52,%53,%54,%55}, {%sf10}, {0, 0}, {%95}, {0, 0};\n"
+      "    prmt.b32 %sf11, %89, %89, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%48,%49,%50,%51}, {%68,%69,%70,%71}, {%80,%81}, {%48,%49,%50,%51}, {%sf11}, {0, 0}, {%94}, {0, 0};\n"
+      "    prmt.b32 %sf12, %89, %89, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%44,%45,%46,%47}, {%68,%69,%70,%71}, {%78,%79}, {%44,%45,%46,%47}, {%sf12}, {0, 0}, {%93}, {0, 0};\n"
+      "    prmt.b32 %sf13, %89, %89, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%40,%41,%42,%43}, {%68,%69,%70,%71}, {%76,%77}, {%40,%41,%42,%43}, {%sf13}, {0, 0}, {%92}, {0, 0};\n"
+      "    prmt.b32 %sf14, %89, %89, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%36,%37,%38,%39}, {%68,%69,%70,%71}, {%74,%75}, {%36,%37,%38,%39}, {%sf14}, {0, 0}, {%91}, {0, 0};\n"
+      "    prmt.b32 %sf15, %89, %89, 0x3654;\n"
+      "    mma.sync.aligned.kind::mxf4nvf4.block_scale.scale_vec::4X.m16n8k64.row.col.f32.e2m1.e2m1.f32.ue4m3 {%32,%33,%34,%35}, {%68,%69,%70,%71}, {%72,%73}, {%32,%33,%34,%35}, {%sf15}, {0, 0}, {%90}, {0, 0};\n"
+      "}\n"
+      :
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<0>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<0>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<1>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<2>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<3>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<4>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<5>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<6>{})),
+        "+f"(acc(cute::Int<0>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<1>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<2>{}, cute::Int<1>{}, cute::Int<7>{})),
+        "+f"(acc(cute::Int<3>{}, cute::Int<1>{}, cute::Int<7>{}))
+      :
+        "r"(a(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<1>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<2>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<3>{}, cute::Int<0>{})),
+        "r"(a(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<1>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<2>{}, cute::Int<1>{})),
+        "r"(a(cute::Int<3>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<0>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<1>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<2>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<2>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<3>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<3>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<4>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<4>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<5>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<5>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<6>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<6>{})),
+        "r"(b(cute::Int<0>{}, cute::Int<7>{})),
+        "r"(b(cute::Int<1>{}, cute::Int<7>{})),
+        "r"(sfa(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(sfa(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<0>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<1>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<2>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<3>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<4>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<5>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<6>{})),
+        "r"(sfb(cute::Int<0>{}, cute::Int<7>{})));
+  }
+  else if constexpr (P == 15) {
     asm volatile(
       "{\n"
       "  .reg .b32 %sf<16>;\n"
