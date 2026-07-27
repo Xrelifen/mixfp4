@@ -314,6 +314,39 @@ Two implementation notes, both of which cost a debugging round:
 What the joint trick cannot do is reach the floor. 16×8×64 needs 10 bits per k_block, so 20 jointly
 — far past the 32-arm cliff. That is why the floor still pays the in-body dispatch, twice.
 
+### Shrinking the CTA tile: works structurally, does not pay
+
+A 16×16×128 granule needs `kAGran=2 + kBGran=4` = 6 bits, so 64 arms, and 64 arms outlines
+(`STACK:912` plain, `STACK:864` with the blob — the blob shaves the frame but does not prevent the
+spill). Measured, that build runs at **41.8 TFLOP/s, +96.5%**, consistent with the 32.3 this report
+recorded originally.
+
+But the arm count is not a property of the granule — it is a property of the granule *relative to
+the warp tile*. A warp owns 8 n-atoms only because the CTA tile is 128 wide in N. At
+`-DMIXFP4_TILE_N=64` it owns 4, so a 16-column granule costs 2 bits instead of 4 and the whole
+thing fits in **16 arms**, clean: `REG:168`, `STACK:0`, 512 OMMAs, no `CALL`, no `LDL`/`STL`.
+
+That part works. It just does not pay:
+
+| route to 16 × 16 × 128 | tile N | arms | TFLOP/s | vs stock |
+|---|---|---|---|---|
+| ceiling, no dispatch | 128 | 1 | 1187.3 | +1.4% |
+| **ceiling, no dispatch** | **64** | **1** | **903.2** | **+25.0%** |
+| 16×16×128, half-width tile | 64 | 16 | 893.5 | +25.8% |
+| 16×16×128, 64 arms, outlined | 128 | 64 | 41.8 | +96.5% |
+| 16×16×**64**, PTX in-body dispatch | 128 | 64 | 886.7 | +26.4% |
+
+**The half-width tile costs 25% before any dispatch exists.** Halving N halves the reuse of each
+A-fragment load, and this kernel is close enough to its roofline that the tile shape dominates
+everything the dispatch does. The 16-arm dispatch on top of it is nearly free — 903.2 → 893.5, a
+0.8-point cost, which is a clean independent confirmation that an out-of-body dispatch at 16 arms
+is cheap — but it is 0.8 points on top of a 25-point loss.
+
+So for a 16×16 spatial granule the in-body PTX path wins outright: same price (+26.4% vs +25.8%,
+inside run-to-run noise) and it delivers K=64 rather than K=128. **Shrinking the tile to buy
+dispatch bits is a dead end**, and the reason is worth remembering: the tile shape is a throughput
+parameter first and a granularity parameter only incidentally.
+
 The practical consequence for a quantization scheme: **a 64-element K group on the weights is
 nearly free** (+5.0%), fine channel granularity at K=128 is cheap (16×32×128 at +7.5%), and only
 the combination of both, or the true floor, runs into the 20-point wall.
