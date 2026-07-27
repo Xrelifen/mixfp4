@@ -117,6 +117,11 @@ using namespace cute;
 // -DMIXFP4_A/B_ATOMS_PER_GRANULE to match whatever the generator was run with.
 #if defined(MIXFP4_BLOB) && MIXFP4_BLOB
 #include "collective/mixed_mma_blob_generated.hpp"
+// Joint-K rides on the blob path (it needs the arms to stay inlined) and takes the K granule down
+// to one k_block while leaving the dispatch outside the k_tile body. The host tagging follows.
+#if defined(MIXFP4_JOINT_K) && MIXFP4_JOINT_K
+#define MIXFP4_K_GRANULE 64
+#endif
 #endif
 
 namespace mixfp4_detail {
@@ -993,7 +998,26 @@ struct CollectiveMma<
     static_assert(kMmaN % kBAtoms == 0, "B granule must divide the warp's N atom count");
     constexpr int kAGran    = kMmaM / kAAtoms;
     constexpr int kBGran    = kMmaN / kBAtoms;
-    constexpr int kNumArms  = 1 << (kAGran + kBGran);
+    constexpr int kBitsPerKBlock = kAGran + kBGran;
+
+    // -DMIXFP4_JOINT_K=1: specialize the k_tile on *both* k_blocks' patterns at once, so the
+    // format can change every 64 elements of K while the dispatch stays OUTSIDE the k_tile body.
+    //
+    // This is the lever that matters. Moving the dispatch inside the body costs ~97 cycles a time
+    // (32x32x128 -> 32x32x64 is +3.3% -> +23.5% at identical granule, arms and OMMA count), and
+    // that penalty is what a K granule of 64 normally buys you. Paying for K=64 in *arms* instead
+    // -- 2^(2*bits) rather than 2^bits -- keeps the branch where it is cheap. The arm budget is
+    // what limits it: with the blob path's cliff at 32 arms, 2 bits per k_block is the most that
+    // fits, i.e. one A granule and one B granule.
+#if defined(MIXFP4_JOINT_K) && MIXFP4_JOINT_K
+    constexpr int kNumArms  = 1 << (2 * kBitsPerKBlock);
+    static_assert(K_BLOCK_MAX == 2, "joint-K specialization assumes two k_blocks per k_tile");
+    static_assert(kNumArms <= 32,
+                  "joint-K needs 2^(2*bits) arms; past 32 cicc outlines the k_tile body and spills "
+                  "the accumulators. Use a coarser granule.");
+#else
+    constexpr int kNumArms  = 1 << kBitsPerKBlock;
+#endif
 
 #if defined(MIXFP4_PTX) && MIXFP4_PTX
     // The generated PTX hardcodes the warp's atom counts, so a tile-shape change that the rest of
@@ -1042,6 +1066,48 @@ struct CollectiveMma<
       return site;
     };
 
+#if defined(MIXFP4_JOINT_K) && MIXFP4_JOINT_K
+    // Same flags as read_site(), but taken from SHARED memory rather than from the register
+    // fragment.
+    //
+    // This is forced by the register-level software pipeline. At the top of a k_tile only
+    // k_block 0's operands are resident -- k_block 1 is copied *inside* the body, by
+    // copy_kblock(k_block_next). So read_site(_1{}) at dispatch time would read the previous
+    // k_tile's registers, which is silently wrong (0.29 relative error, not 0.66: most granules
+    // still happen to match). The smem stage, by contrast, holds the whole k_tile already --
+    // the TMA producer filled it before consumer_wait released us.
+    //
+    // tCsSFA_stage(v, m, k_block) is what copy() feeds to tCrSFA_copy_view(v, m, k_block), so
+    // element 0 of atom m is the same byte read_site() reads out of the recast register word.
+    auto read_site_smem = [&](auto k_block) {
+      uint32_t pattern = 0;
+      for_each(make_int_sequence<kAGran>{}, [&](auto gi) {
+        constexpr int g = decltype(gi)::value;
+        if ((tCsSFA_stage(_0{}, C<g * kAAtoms>{}, k_block).raw() & MIXFP4_FLAG_MASK) != 0) {
+          pattern |= 1u << g;
+        }
+      });
+      for_each(make_int_sequence<kBGran>{}, [&](auto gi) {
+        constexpr int g = decltype(gi)::value;
+        if ((tCsSFB_stage(_0{}, C<g * kBAtoms>{}, k_block).raw() & MIXFP4_FLAG_MASK) != 0) {
+          pattern |= 1u << (kAGran + g);
+        }
+      });
+      // Same guard as read_site(): tagging finer than the granule splits the warp across arms.
+#if defined(MIXFP4_DEBUG_UNIFORMITY) && MIXFP4_DEBUG_UNIFORMITY
+      uint32_t const agree =
+          __ballot_sync(0xffffffffu, pattern == __shfl_sync(0xffffffffu, pattern, 0));
+      if (agree != 0xffffffffu) {
+        printf("mixfp4: FATAL non-uniform format flag within a warp (thread %d, site %u, "
+               "agreement mask 0x%08x) -- scale-factor tagging is finer than the dispatch "
+               "granule\n", thread_idx, pattern, agree);
+        __trap();
+      }
+#endif
+      return pattern;
+    };
+#endif
+
     // One k_block's worth of MMAs, with every atom's format fixed at compile time by `pattern`.
     //
     // This open-codes cute::gemm's dispatch [4] rather than calling it, because a single
@@ -1068,7 +1134,16 @@ struct CollectiveMma<
 #elif defined(MIXFP4_BLOB) && MIXFP4_BLOB
       // Same per-k_tile C++ dispatch as the default path, but this k_block's MMAs are one opaque
       // blob, which is what keeps cicc from outlining the body past 8 arms.
+#if defined(MIXFP4_JOINT_K) && MIXFP4_JOINT_K
+      // The arm encodes both k_blocks: k_block 0's flags in the low bits, k_block 1's above them.
+      // Each k_block takes its own half, still entirely at compile time.
+      constexpr uint32_t kMask  = (1u << kBitsPerKBlock) - 1;
+      constexpr uint32_t kMine  =
+          (decltype(pattern_c)::value >> (decltype(k_block)::value * kBitsPerKBlock)) & kMask;
+      mixfp4::mma_kblock_blob<kMine>(
+#else
       mixfp4::mma_kblock_blob<decltype(pattern_c)::value>(
+#endif
           accum,
           recast<uint32_t>(tCrA(_,_,k_block)),
           recast<uint32_t>(tCrB(_,_,k_block)),
@@ -1155,6 +1230,12 @@ struct CollectiveMma<
       // PTX path: the dispatch lives inside the generated asm, so there is exactly one arm here.
       (void) &read_site;
       body(C<0>{});
+#elif defined(MIXFP4_JOINT_K) && MIXFP4_JOINT_K
+      // Both k_blocks' patterns in one index, so one branch outside the body covers a K granule
+      // of 64. Reading k_block 1's flags here costs a second scale-factor read per k_tile, but
+      // those registers are already resident and the reads are independent.
+      mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(
+          read_site_smem(_0{}) | (read_site_smem(_1{}) << kBitsPerKBlock), body);
 #else
       mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(read_site(_0{}), body);
 #endif
