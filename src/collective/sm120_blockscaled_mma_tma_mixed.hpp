@@ -1403,9 +1403,15 @@ struct CollectiveMma<
     //
     // Legal because consumer_release only guards shared-memory reads of the retiring stage, and
     // copy_kblock(1) just above is this stage's last one; the MMAs that follow touch registers.
+    // MIXFP4_COPY_OUTSIDE hoists both smem->rmem copies out of the arms, holding arm count and
+    // branch mechanism fixed. That isolates copy placement, which is the variable that decides
+    // whether ptxas can interleave LDSM among the OMMAs (inside) or has to bunch them ahead of the
+    // branch (outside) -- ncu puts mio_throttle at 0.05 inside versus 0.59 outside.
     auto kb0_region = [&](auto site_c) {
       no_ifconv();
+#if !(defined(MIXFP4_COPY_OUTSIDE) && MIXFP4_COPY_OUTSIDE)
       copy_kblock(_1{});
+#endif
 #if defined(MIXFP4_EARLY_BARRIER) && MIXFP4_EARLY_BARRIER
       cutlass::arch::NamedBarrier::sync(
           thr_size(tiled_mma), cutlass::arch::ReservedNamedBarriers::Sm120MainloopBarrier);
@@ -1434,7 +1440,9 @@ struct CollectiveMma<
     };
     auto kb1_region = [&](auto site_c) {
       no_ifconv();
+#if !(defined(MIXFP4_COPY_OUTSIDE) && MIXFP4_COPY_OUTSIDE)
       copy_kblock(_0{});
+#endif
       gemm_kblock(site_c, _1{});
     };
     auto kb1_region_tail = [&](auto site_c) {
@@ -1444,6 +1452,9 @@ struct CollectiveMma<
 
     CUTLASS_PRAGMA_NO_UNROLL
     for ( ; k_tile_count > 1; --k_tile_count) {
+#if defined(MIXFP4_COPY_OUTSIDE) && MIXFP4_COPY_OUTSIDE
+      copy_kblock(_1{});
+#endif
       // Both flag reads come from the REGISTER fragment, not smem. k_block 0's operands are
       // resident on entry; k_block 1's are loaded by kb0_region's own copy_kblock(1), so by the
       // time the second dispatch runs they are in registers too. The earlier version of this path
@@ -1466,12 +1477,20 @@ struct CollectiveMma<
       pipeline.consumer_wait(smem_pipe_read);
 #endif
 
+#if defined(MIXFP4_COPY_OUTSIDE) && MIXFP4_COPY_OUTSIDE
+      copy_kblock(_0{});
+#endif
       mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(read_site(_1{}), kb1_region);
     } // k_tile_count
 
     // Hoist out the last k_tile: no stage follows it, so neither the wait nor k_block 0's copy
     // happens.
     {
+      // The tail must hoist the copy too, or the last k_tile never loads k_block 1 -- 0.39
+      // relative error, and only in the final k_tile, which is exactly how it presents.
+#if defined(MIXFP4_COPY_OUTSIDE) && MIXFP4_COPY_OUTSIDE
+      copy_kblock(_1{});
+#endif
 #if defined(MIXFP4_EARLY_BARRIER) && MIXFP4_EARLY_BARRIER
       mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(read_site(_0{}), kb0_region_tail);
 #else
