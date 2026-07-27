@@ -126,6 +126,27 @@ using namespace cute;
 #if defined(MIXFP4_JOINT_KB) && MIXFP4_JOINT_KB
 #define MIXFP4_K_GRANULE_B 64
 #endif
+// Joint-K-A: the mirror image -- only A's K granule drops to a k_block, B stays at the k_tile.
+// This is what a 16 rows x 64 K granule on A costs: 2*kAGran + kBGran bits. With A at one atom
+// (kAGran=2) and B coarsened to the warp's whole 64-column footprint (kBGran=1) that is 5 bits,
+// so 32 arms -- the most the blob path inlines.
+#if defined(MIXFP4_JOINT_KA) && MIXFP4_JOINT_KA
+#define MIXFP4_K_GRANULE_A 64
+#endif
+// Split-K: one dispatch per k_block, but -- unlike the historical "in-body" dispatch that cost
+// ~20 points -- each arm contains that k_block's smem->rmem copies AS WELL AS its MMAs.
+//
+// That distinction is the whole point. The measured cost of a per-k_block dispatch was never the
+// branch; it was `short_scoreboard` + `mio_throttle` stalls from LDSMs bunching, because with the
+// copies OUTSIDE the branch ptxas can no longer sink them in among the MMAs. Putting the copy
+// inside the arm restores the interleave within each arm, where ptxas is free to schedule again.
+//
+// The prize is arm count: a k_block needs only kAGran + kBGran bits, so a 16-row x 64-K granule on
+// A costs 8 arms per dispatch rather than the 32 that joint-K needs -- and it gives B a 64-element
+// K granule for free.
+#if defined(MIXFP4_SPLIT_K) && MIXFP4_SPLIT_K
+#define MIXFP4_K_GRANULE 64
+#endif
 #endif
 
 namespace mixfp4_detail {
@@ -1029,6 +1050,15 @@ struct CollectiveMma<
     static_assert(kNumArms <= 32,
                   "joint-K-B needs 2^(kAGran + 2*kBGran) arms; past 32 cicc outlines the k_tile "
                   "body and spills the accumulators. Use a coarser granule.");
+#elif defined(MIXFP4_JOINT_KA) && MIXFP4_JOINT_KA
+    // Mirror of joint-K-B: A gets the 64-element K granule, B keeps the k_tile's 128. This is the
+    // configuration that delivers a 16 row x 64 K format block -- one mma.sync's A footprint --
+    // while leaving the branch outside the k_tile body where it costs cycles rather than stalls.
+    constexpr int kNumArms  = 1 << (2 * kAGran + kBGran);
+    static_assert(K_BLOCK_MAX == 2, "joint-K-A specialization assumes two k_blocks per k_tile");
+    static_assert(kNumArms <= 32,
+                  "joint-K-A needs 2^(2*kAGran + kBGran) arms; past 32 cicc outlines the k_tile "
+                  "body and spills the accumulators. Use a coarser granule.");
 #else
     constexpr int kNumArms  = 1 << kBitsPerKBlock;
 #endif
@@ -1086,7 +1116,9 @@ struct CollectiveMma<
       return site;
     };
 
-#if (defined(MIXFP4_JOINT_K) && MIXFP4_JOINT_K) || (defined(MIXFP4_JOINT_KB) && MIXFP4_JOINT_KB)
+#if (defined(MIXFP4_JOINT_K) && MIXFP4_JOINT_K) || (defined(MIXFP4_JOINT_KB) && MIXFP4_JOINT_KB) \
+ || (defined(MIXFP4_JOINT_KA) && MIXFP4_JOINT_KA) \
+ || (defined(MIXFP4_SPLIT_K) && MIXFP4_SPLIT_K)
     // Same flags as read_site(), but taken from SHARED memory rather than from the register
     // fragment.
     //
@@ -1130,6 +1162,29 @@ struct CollectiveMma<
       });
       return bits;
     };
+    // Only k_block 1's flags actually have to come from smem. k_block 0's operands ARE resident in
+    // registers at dispatch time -- that is the whole premise of the register-level pipeline -- so
+    // reading them back out of shared memory is a shared-memory round trip the kernel already paid
+    // for. These two read the register fragment instead, which is what read_site() does.
+    auto read_a_reg = [&](auto k_block) {
+      auto sfa_words = recast<uint32_t>(tCrSFA(_,_,k_block));   // (1, MMA_M)
+      uint32_t bits = 0;
+      for_each(make_int_sequence<kAGran>{}, [&](auto gi) {
+        constexpr int g = decltype(gi)::value;
+        if ((sfa_words(_0{}, C<g * kAAtoms>{}) & MIXFP4_FLAG_MASK) != 0) { bits |= 1u << g; }
+      });
+      return bits;
+    };
+    auto read_b_reg = [&](auto k_block) {
+      auto sfb_words = recast<uint32_t>(tCrSFB(_,_,k_block));   // (1, MMA_N)
+      uint32_t bits = 0;
+      for_each(make_int_sequence<kBGran>{}, [&](auto gi) {
+        constexpr int g = decltype(gi)::value;
+        if ((sfb_words(_0{}, C<g * kBAtoms>{}) & MIXFP4_FLAG_MASK) != 0) { bits |= 1u << g; }
+      });
+      return bits;
+    };
+
     auto read_site_smem = [&](auto k_block) {
       uint32_t pattern = read_a_smem(k_block) | (read_b_smem(k_block) << kAGran);
       // Same guard as read_site(): tagging finer than the granule splits the warp across arms.
@@ -1188,6 +1243,15 @@ struct CollectiveMma<
       constexpr uint32_t kAbits = kJoint & ((1u << kAGran) - 1);
       constexpr uint32_t kBbits =
           (kJoint >> (kAGran + decltype(k_block)::value * kBGran)) & ((1u << kBGran) - 1);
+      constexpr uint32_t kMine  = kAbits | (kBbits << kAGran);
+      mixfp4::mma_kblock_blob<kMine>(
+#elif defined(MIXFP4_JOINT_KA) && MIXFP4_JOINT_KA
+      // Layout: A's flags for k_block 0 in the low kAGran bits, A's for k_block 1 next, then B's
+      // (shared by both k_blocks) on top. The blob wants A flags low, B flags above.
+      constexpr uint32_t kJoint = decltype(pattern_c)::value;
+      constexpr uint32_t kAbits =
+          (kJoint >> (decltype(k_block)::value * kAGran)) & ((1u << kAGran) - 1);
+      constexpr uint32_t kBbits = (kJoint >> (2 * kAGran)) & ((1u << kBGran) - 1);
       constexpr uint32_t kMine  = kAbits | (kBbits << kAGran);
       mixfp4::mma_kblock_blob<kMine>(
 #else
@@ -1290,6 +1354,12 @@ struct CollectiveMma<
       mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(
           read_a_smem(_0{}) | (read_b_smem(_0{}) << kAGran)
                             | (read_b_smem(_1{}) << (kAGran + kBGran)), body);
+#elif defined(MIXFP4_JOINT_KA) && MIXFP4_JOINT_KA
+      // A's flags once per k_block, B's once for the whole k_tile. Only k_block 1 needs the smem
+      // read; the rest is already in the register fragment.
+      mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(
+          read_a_reg(_0{}) | (read_a_smem(_1{}) << kAGran)
+                           | (read_b_reg(_0{}) << (2 * kAGran)), body);
 #else
       mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(read_site(_0{}), body);
 #endif
@@ -1298,6 +1368,78 @@ struct CollectiveMma<
     pipeline.consumer_wait(smem_pipe_read);
 
     copy_kblock(_0{});
+
+#if defined(MIXFP4_SPLIT_K) && MIXFP4_SPLIT_K
+    // ---------------------------------------------------------------------------------------
+    // SPLIT-K: one dispatch per k_block, each arm carrying its own copies.
+    // ---------------------------------------------------------------------------------------
+    // The k_tile is cut at the pipeline barrier, which already sat between the two k_blocks, and
+    // each half gets its own kBitsPerKBlock-wide dispatch. An arm is {copy the operands this half
+    // will not need until the other half, then this half's 16 MMAs} -- i.e. exactly the region
+    // ptxas needs to see whole in order to interleave LDSM with OMMA.
+    //
+    // Both patterns are read at the TOP of the k_tile, before the barrier. k_block 1's flags
+    // belong to the stage being retired, so reading them after the restage would read the stage
+    // the producer is about to refill.
+    // If-conversion poison. Without it ptxas folds these arms into `@P OMMA`/`@!P OMMA` pairs --
+    // measured: 128 of 448 OMMAs predicated, 683 TFLOP/s. A predicated-off OMMA still burns a
+    // tensor-pipe issue slot, which is the 2x this whole design exists to avoid. One
+    // `bar.warp.sync -1` per arm is something ptxas will not speculate across, and costs a single
+    // WARPSYNC on an already-converged warp.
+    auto no_ifconv = [] { asm volatile("bar.warp.sync -1;"); };
+
+    auto kb0_region = [&](auto site_c) {
+      no_ifconv();
+      copy_kblock(_1{});
+      gemm_kblock(site_c, _0{});
+    };
+    auto kb1_region = [&](auto site_c) {
+      no_ifconv();
+      copy_kblock(_0{});
+      gemm_kblock(site_c, _1{});
+    };
+    auto kb1_region_tail = [&](auto site_c) {
+      no_ifconv();
+      gemm_kblock(site_c, _1{});
+    };
+
+    CUTLASS_PRAGMA_NO_UNROLL
+    for ( ; k_tile_count > 1; --k_tile_count) {
+      uint32_t const pat0 = read_site_smem(_0{});
+      uint32_t const pat1 = read_site_smem(_1{});
+
+      mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(pat0, kb0_region);
+
+      cutlass::arch::NamedBarrier::sync(
+          thr_size(tiled_mma), cutlass::arch::ReservedNamedBarriers::Sm120MainloopBarrier);
+      pipeline.consumer_release(smem_pipe_read);
+      ++smem_pipe_read;
+      read_stage    = smem_pipe_read.index();
+      tCsA_stage    = tCsA(_,_,_,read_stage);
+      tCsB_stage    = tCsB(_,_,_,read_stage);
+      tCsSFA_stage  = tCsSFA(_,_,_,read_stage);
+      tCsSFB_stage  = tCsSFB(_,_,_,read_stage);
+      pipeline.consumer_wait(smem_pipe_read);
+
+      mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(pat1, kb1_region);
+    } // k_tile_count
+
+    // Hoist out the last k_tile: no stage follows it, so neither the wait nor k_block 0's copy
+    // happens.
+    {
+      uint32_t const pat0 = read_site_smem(_0{});
+      uint32_t const pat1 = read_site_smem(_1{});
+
+      mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(pat0, kb0_region);
+
+      cutlass::arch::NamedBarrier::sync(
+          thr_size(tiled_mma), cutlass::arch::ReservedNamedBarriers::Sm120MainloopBarrier);
+      pipeline.consumer_release(smem_pipe_read);
+      ++smem_pipe_read;
+
+      mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(pat1, kb1_region_tail);
+    }
+#else
     CUTLASS_PRAGMA_NO_UNROLL
     for ( ; k_tile_count > 1; --k_tile_count) {
       //
@@ -1310,6 +1452,7 @@ struct CollectiveMma<
     // Hoist out last k_tile
     //
     dispatch(k_tile_tail_body);
+#endif
 }
 
   /// Perform a Consumer Epilogue to release all buffers

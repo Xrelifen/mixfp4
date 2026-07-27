@@ -84,10 +84,44 @@ using OperatorClass = cutlass::arch::OpClassBlockScaledTensorOp;
 using ThreadBlockShape = Shape<_128, cute::Int<MIXFP4_TILE_N>, _128>;
 using ClusterShape = Shape<_1, _1, _1>;
 
+// How the CTA's 8 MMA warps are arranged over the tile. The builder picks 4x2 for a 128-wide tile,
+// which gives each warp 32 rows x 64 columns, i.e. TWO m-atoms -- and that two is what makes a
+// 16-row format granule cost 2 dispatch bits per k_block instead of 1.
+//
+// Rearranging to 8x1 gives each warp ONE m-atom (16 rows) and all 16 n-atoms. A 16-row x 64-K
+// granule on A then costs 2*1 + 1 = 3 bits, i.e. 8 arms, rather than the 5 bits / 32 arms the 4x2
+// arrangement forces. Unlike shrinking the CTA tile (which loses operand reuse and cost 25%), this
+// keeps the tile at 128x128: the CTA computes exactly the same product and moves exactly the same
+// global traffic. What changes is intra-CTA smem reads -- every warp now reads all 128 columns of
+// B rather than 64 -- so it is a shared-memory-bandwidth trade, not a reuse trade.
+//
+// Layout<Shape<_8,_1,_1>> is not exotic: it is the arrangement CUTLASS's own sm120 blockscaled
+// builder selects for tiles narrower than 16, so the surrounding smem layouts and copy atoms
+// already support it.
+#ifndef MIXFP4_ATOM_M
+#define MIXFP4_ATOM_M 4
+#endif
+static_assert(8 % MIXFP4_ATOM_M == 0, "the 8 MMA warps must divide into MIXFP4_ATOM_M rows");
+using MixedAtomLayoutMNK =
+    Layout<Shape<cute::Int<MIXFP4_ATOM_M>, cute::Int<8 / MIXFP4_ATOM_M>, _1>>;
+
+// The epilogue asserts `EPI_TILE_M % MMA_TILE_M == 0`, where MMA_TILE_M is the CTA tile's M
+// divided by the m-atoms one warp owns. The 4x2 arrangement gives 128/2 = 64, which the auto
+// epilogue tile satisfies; 8x1 gives 128/1 = 128, which it does not. So an 8x1 build has to name
+// its own epilogue tile, full-height in M.
+#ifndef MIXFP4_EPI_N
+#define MIXFP4_EPI_N 16
+#endif
+#if MIXFP4_ATOM_M == 8
+using MixedEpilogueTile = Shape<_128, cute::Int<MIXFP4_EPI_N>>;
+#else
+using MixedEpilogueTile = cutlass::epilogue::collective::EpilogueTileAuto;
+#endif
+
 using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
     ArchTag, OperatorClass,
     ThreadBlockShape, ClusterShape,
-    cutlass::epilogue::collective::EpilogueTileAuto,
+    MixedEpilogueTile,
     ElementAccumulator, ElementAccumulator,
     ElementC, LayoutCTag, AlignmentC,
     ElementD, LayoutDTag, AlignmentD,
@@ -117,7 +151,7 @@ using MixedDispatchPolicy = cutlass::gemm::MainloopSm120TmaWarpSpecializedBlockS
 using MixedMmaOp = cute::SM120::BLOCKSCALED::SM120_16x8x64_TN_VS_Mixed;
 using MixedTiledMma = decltype(cute::make_tiled_mma(
     MixedMmaOp{},
-    typename StdMainloopBuilder::AtomLayoutMNK{},
+    MixedAtomLayoutMNK{},
     Tile<typename StdMainloopBuilder::PermTileM,
          typename StdMainloopBuilder::PermTileN,
          typename StdMainloopBuilder::PermTileK>{}));
