@@ -196,37 +196,86 @@ def emit_index_helper(cfg: Config) -> str:
     the same order emit_arm() decodes.
     """
     lines = []
+    fast = []
     for gm in range(cfg.groups_m):
         for gn in range(cfg.groups_n):
             g = gm * cfg.groups_n + gn
             terms = []
+            srcs = []          # the flag-carrying words, in ascending index-bit order
             for ga in range(cfg.a_gran):
                 m = gm * cfg.mpg + ga * cfg.a_atoms
                 terms.append(f"(((sfa(cute::Int<0>{{}}, cute::Int<{m}>{{}}) >> 7) & 1u) << {ga})")
+                srcs.append(f"sfa(cute::Int<0>{{}}, cute::Int<{m}>{{}})")
             for gb in range(cfg.b_gran):
                 n = gn * cfg.npg + gb * cfg.b_atoms
                 terms.append(f"(((sfb(cute::Int<0>{{}}, cute::Int<{n}>{{}}) >> 7) & 1u) "
                              f"<< {cfg.a_gran + gb})")
+                srcs.append(f"sfb(cute::Int<0>{{}}, cute::Int<{n}>{{}})")
             lines.append(f"  ix[{g}] = {' | '.join(terms)};")
+            fast.append(emit_fast_index(g, srcs))
 
-    # TIMING PROBE ONLY -- produces WRONG NUMBERS by construction.
-    #
-    # Isolates the cost of *reading the flags* from the cost of the branch itself. The real index
-    # is 6 scale-factor byte reads plus the shift/or tree that packs them, ~17 instructions; this
-    # replaces the whole thing with one LOP3 on an operand register that is already live. The
-    # branch stays fully dynamic and still reaches every arm, so everything except the index
-    # computation is unchanged. If throughput moves a lot, the flag read is the bottleneck and
-    # precomputing the index is worth building; if it does not, the branch itself is the wall.
-    # The index MUST be warp-uniform: brx.idx.uni with a divergent index is undefined behaviour,
-    # and in practice wedges the GPU (an operand register was tried here first -- it is per-lane,
-    # and it hung the card). blockIdx.x is uniform, costs about one instruction, and still varies
-    # across CTAs so the jump table is genuinely exercised.
+    # TIMING PROBE ONLY -- produces WRONG NUMBERS by construction. Isolates the cost of *reading*
+    # the flags from the cost of the branch. The index MUST be warp-uniform: brx.idx.uni with a
+    # divergent index is undefined behaviour, and in practice wedges the GPU (an operand register
+    # was tried here first -- it is per-lane, and it hung the card).
     probe = [f"  ix[{g}] = blockIdx.x & {cfg.npat - 1}u;" for g in range(cfg.groups)]
+    # The naive form is the DEFAULT and it is the faster one, which is not what instruction
+    # counting predicts. Its N extractions are mutually independent, so they overlap; the PRMT
+    # gather below replaces them with fewer instructions on a single serial chain
+    # (PRMT -> PRMT -> AND -> SHR -> IMAD -> SHR -> AND). Measured at 16x16x64, 4096^3:
+    # naive 887.6 TFLOP/s, PRMT-gathered 878.1. ILP beats instruction count here.
     return ("#if defined(MIXFP4_FAKE_INDEX) && MIXFP4_FAKE_INDEX\n"
             + "\n".join(probe)
+            + "\n#elif defined(MIXFP4_PRMT_INDEX) && MIXFP4_PRMT_INDEX\n"
+            + "\n".join(fast)
             + "\n#else\n"
             + "\n".join(lines)
             + "\n#endif")
+
+
+def emit_fast_index(g: int, srcs: list[str]) -> str:
+    """Same index, built with PRMT byte-gathers and a multiply instead of one shift/mask/or per flag.
+
+    Every flag is bit 7 of byte 0 of its own scale word, so the naive form touches N registers with
+    a shift+mask+or each. ncu puts the whole computation at 39.2 instructions per k_tile across the
+    two dispatches -- 51 of the 176 instructions a k_tile executes, against a 125-instruction
+    no-dispatch ceiling, and this kernel is instruction-bound there (its cycles-per-instruction is
+    *below* the ceiling's). So the index is the single biggest term, not the branch.
+
+    PRMT gathers four flag-carrying bytes into one word for free, and one multiply compacts four
+    set MSBs into four adjacent bits: with y = (w & 0x80808080) >> 7 holding 0/1 in bytes 0..3,
+    y * 0x01020408 lands those bits at 24..27, because the multiplier's 2^24/2^17/2^10/2^3 terms
+    carry byte i up to bit 24+i and nothing below 2^24 can carry into them.
+    """
+    n = len(srcs)
+    out = []
+    # Gather in groups of four: two PRMTs to pair the byte-0s, one to merge the pairs.
+    words = []
+    for base in range(0, n, 4):
+        chunk = srcs[base:base + 4]
+        if len(chunk) == 1:
+            words.append((f"({chunk[0]})", 1))
+        elif len(chunk) == 2:
+            words.append((f"__byte_perm({chunk[0]}, {chunk[1]}, 0x0040)", 2))
+        elif len(chunk) == 3:
+            words.append((f"__byte_perm(__byte_perm({chunk[0]}, {chunk[1]}, 0x0040), "
+                          f"{chunk[2]}, 0x4010)", 3))
+        else:
+            words.append((f"__byte_perm(__byte_perm({chunk[0]}, {chunk[1]}, 0x0040), "
+                          f"__byte_perm({chunk[2]}, {chunk[3]}, 0x0040), 0x5410)", 4))
+    MASK = {1: "0x00000080u", 2: "0x00008080u", 3: "0x00808080u", 4: "0x80808080u"}
+    MUL  = {1: "0x00000001u", 2: "0x00000102u", 3: "0x00010204u", 4: "0x01020408u"}
+    SHR  = {1: 0, 2: 8, 3: 16, 4: 24}
+    # The multiply's partial products spill above the field being extracted, so the shifted result
+    # MUST be masked. Without this the two-flag case yields 0x103 rather than 0x3, ix runs past the
+    # end of the .branchtargets table, and brx.idx jumps to garbage -- which hangs the GPU rather
+    # than returning wrong numbers.
+    KEEP = {1: "1u", 2: "0x3u", 3: "0x7u", 4: "0xFu"}
+    for i, (expr, cnt) in enumerate(words):
+        piece = (f"((((({expr}) & {MASK[cnt]}) >> 7) * {MUL[cnt]} >> {SHR[cnt]}) & {KEEP[cnt]})"
+                 if cnt > 1 else f"((({expr}) >> 7) & 1u)")
+        out.append(piece if i == 0 else f"({piece} << {4 * i})")
+    return f"  ix[{g}] = {' | '.join(out)};"
 
 
 def main() -> int:

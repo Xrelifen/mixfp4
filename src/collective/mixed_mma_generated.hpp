@@ -38,6 +38,8 @@ mma_kblock(TAcc& acc, TA const& a, TB const& b, TSFA const& sfa, TSFB const& sfb
   uint32_t ix[1];
 #if defined(MIXFP4_FAKE_INDEX) && MIXFP4_FAKE_INDEX
   ix[0] = blockIdx.x & 63u;
+#elif defined(MIXFP4_PRMT_INDEX) && MIXFP4_PRMT_INDEX
+  ix[0] = (((((__byte_perm(__byte_perm(sfa(cute::Int<0>{}, cute::Int<0>{}), sfa(cute::Int<0>{}, cute::Int<1>{}), 0x0040), __byte_perm(sfb(cute::Int<0>{}, cute::Int<0>{}), sfb(cute::Int<0>{}, cute::Int<2>{}), 0x0040), 0x5410)) & 0x80808080u) >> 7) * 0x01020408u >> 24) & 0xFu) | ((((((__byte_perm(sfb(cute::Int<0>{}, cute::Int<4>{}), sfb(cute::Int<0>{}, cute::Int<6>{}), 0x0040)) & 0x00008080u) >> 7) * 0x00000102u >> 8) & 0x3u) << 4);
 #else
   ix[0] = (((sfa(cute::Int<0>{}, cute::Int<0>{}) >> 7) & 1u) << 0) | (((sfa(cute::Int<0>{}, cute::Int<1>{}) >> 7) & 1u) << 1) | (((sfb(cute::Int<0>{}, cute::Int<0>{}) >> 7) & 1u) << 2) | (((sfb(cute::Int<0>{}, cute::Int<2>{}) >> 7) & 1u) << 3) | (((sfb(cute::Int<0>{}, cute::Int<4>{}) >> 7) & 1u) << 4) | (((sfb(cute::Int<0>{}, cute::Int<6>{}) >> 7) & 1u) << 5);
 #endif
