@@ -208,7 +208,25 @@ def emit_index_helper(cfg: Config) -> str:
                 terms.append(f"(((sfb(cute::Int<0>{{}}, cute::Int<{n}>{{}}) >> 7) & 1u) "
                              f"<< {cfg.a_gran + gb})")
             lines.append(f"  ix[{g}] = {' | '.join(terms)};")
-    return "\n".join(lines)
+
+    # TIMING PROBE ONLY -- produces WRONG NUMBERS by construction.
+    #
+    # Isolates the cost of *reading the flags* from the cost of the branch itself. The real index
+    # is 6 scale-factor byte reads plus the shift/or tree that packs them, ~17 instructions; this
+    # replaces the whole thing with one LOP3 on an operand register that is already live. The
+    # branch stays fully dynamic and still reaches every arm, so everything except the index
+    # computation is unchanged. If throughput moves a lot, the flag read is the bottleneck and
+    # precomputing the index is worth building; if it does not, the branch itself is the wall.
+    # The index MUST be warp-uniform: brx.idx.uni with a divergent index is undefined behaviour,
+    # and in practice wedges the GPU (an operand register was tried here first -- it is per-lane,
+    # and it hung the card). blockIdx.x is uniform, costs about one instruction, and still varies
+    # across CTAs so the jump table is genuinely exercised.
+    probe = [f"  ix[{g}] = blockIdx.x & {cfg.npat - 1}u;" for g in range(cfg.groups)]
+    return ("#if defined(MIXFP4_FAKE_INDEX) && MIXFP4_FAKE_INDEX\n"
+            + "\n".join(probe)
+            + "\n#else\n"
+            + "\n".join(lines)
+            + "\n#endif")
 
 
 def main() -> int:

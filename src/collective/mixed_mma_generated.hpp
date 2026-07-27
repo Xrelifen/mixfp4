@@ -36,7 +36,11 @@ template <class TAcc, class TA, class TB, class TSFA, class TSFB>
 CUTLASS_DEVICE void
 mma_kblock(TAcc& acc, TA const& a, TB const& b, TSFA const& sfa, TSFB const& sfb) {
   uint32_t ix[1];
+#if defined(MIXFP4_FAKE_INDEX) && MIXFP4_FAKE_INDEX
+  ix[0] = blockIdx.x & 63u;
+#else
   ix[0] = (((sfa(cute::Int<0>{}, cute::Int<0>{}) >> 7) & 1u) << 0) | (((sfa(cute::Int<0>{}, cute::Int<1>{}) >> 7) & 1u) << 1) | (((sfb(cute::Int<0>{}, cute::Int<0>{}) >> 7) & 1u) << 2) | (((sfb(cute::Int<0>{}, cute::Int<2>{}) >> 7) & 1u) << 3) | (((sfb(cute::Int<0>{}, cute::Int<4>{}) >> 7) & 1u) << 4) | (((sfb(cute::Int<0>{}, cute::Int<6>{}) >> 7) & 1u) << 5);
+#endif
 
   asm volatile(
       "{\n"

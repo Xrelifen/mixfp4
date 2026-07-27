@@ -442,7 +442,26 @@ Each dispatch is ~23 instructions of which only ~6 are the branch; the rest is r
 assembling the flags. Splitting a k_tile into two separately-dispatched regions doubles that and
 halves the straight-line run each one amortises over.
 
-So the exchange rate stands: **one operand at the `mma.sync` floor is ~5%; both is ~36%.**
+The natural next hypothesis is that the flag read is the cost — six scale-factor registers, each
+contributing bit 7, packed by a shift/or tree. `MIXFP4_FAKE_INDEX=1` prices that directly: it
+replaces the whole computation with `blockIdx.x & 63`, one instruction, while leaving the 64-way
+`brx.idx` fully dynamic and every arm reachable. (It is a timing probe only — the formats no
+longer match the tags, so the numbers it computes are wrong by construction. The index must stay
+warp-uniform: an operand register was tried first, and a divergent `brx.idx.uni` wedged the card.)
+
+| 16×16×64 | TFLOP/s | vs stock |
+|---|---|---|
+| real index, random tagging | 887.6 | +35.9% |
+| real index, single arm (`MIXFP4_TAG=none`) | 962.5 | +25.4% |
+| **free index, dynamic jump** | **985.1** | **+22.5%** |
+
+Deleting the entire flag read is worth ~23 TFLOP/s, about 2 points. **The index is not the
+bottleneck**; the two in-body jumps and the 64-arm footprint are. Since that is the idealised
+case, a per-k_block dispatch has a floor around +22% and cannot reach 8% however the index is
+computed — which also rules out precomputing it into a side array.
+
+So the exchange rate stands: **one operand at the `mma.sync` floor is ~5%; both is ~36%, with a
+hard floor near +22% even with a free index.**
 
 ### Where the dispatch sits is worth ~90 cycles
 
