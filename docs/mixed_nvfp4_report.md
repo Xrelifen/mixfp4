@@ -229,6 +229,7 @@ that produced this table, which is also a fair reading of the run-to-run noise f
 |---|---|---|---|---|---|---|
 | — (no dispatch) | none | 1 | 64 | clean | 1187.6 | +1.4% |
 | **32 × 32 × 128 (default)** | C++, per k_tile | 8 | 512 | clean | **1164.1** | **+3.4%** |
+| **16 × 64 × 128** | C++, per k_tile | 8 | 512 | clean | **1164.7** | **+3.6%** |
 | 16 × 32 × 128 | C++ + blob | 16 | 1024 | clean | 1113.8 | +7.5% |
 | 32 × 16 × 128 | C++ + blob | 32 | 2048 | clean | 1082.5 | +10.1% |
 | 32 × 32 × 64 | PTX, 1 per k_block | 8 | 512 | clean | 922.0 | +23.5% |
@@ -268,10 +269,21 @@ instead of `2^bits`, with the branch left where it is cheap. Two variants, both 
 | mode | A granule | B granule | arms | TFLOP/s | vs stock |
 |---|---|---|---|---|---|
 | shipped default | 32 rows × 128 K | 32 cols × 128 K | 8 | 1167.3 | +3.4% |
+| C++, fine A | **16 rows** × 128 K | 64 cols × 128 K | 8 | 1164.7 | +3.6% |
 | **`MIXFP4_JOINT_KB`** | 32 rows × 128 K | **64 cols × 64 K** | 8 | **1147.6** | **+5.0%** |
+| `MIXFP4_JOINT_KB`, fine A | **16 rows** × 128 K | **64 cols × 64 K** | 16 | 1098.8 | +9.0% |
 | `MIXFP4_JOINT_K` | 32 rows × **64 K** | 64 cols × **64 K** | 16 | 1093.2 | +9.5% |
 | `MIXFP4_JOINT_KB`, finer B | 32 rows × 128 K | 32 cols × **64 K** | 32 | 1057.7 | +12.5% |
 | in-body dispatch | 32 rows × 64 K | 32 cols × 64 K | 8 | 923.5 | +23.6% |
+
+Row 2 is worth calling out on its own: **A reaches its 16-row hardware floor for +3.6%**, within
+noise of the shipped default and identical to it at 8192×8192×2048 (both 1196.3). Sixteen rows
+costs two A-granule bits, but coarsening B to 64 columns buys them straight back, so it is still
+3 bits and 8 arms. The budget is spendable on either operand — just not both.
+
+Row 4 prices the combination: fine A *and* a 64-element weight-K granule needs
+`kAGran + 2·kBGran` = 4 bits, so 16 arms and +9.0%. The 4-point gap to row 3 is the arm doubling,
+not the granularity.
 
 So a 64-element K granule costs **1.6 points** on the weight operand, or ~6 on both — not 20. The
 cleanest reading is the pair of 16-arm rows in the two tables: 16×32×128 (+7.7%) versus joint-K
@@ -387,10 +399,10 @@ at K=64.
 
 So the granule ladder, by budget:
 
-- **≤5%:** 32×32×128 or 16×64×128 (3 bits, 8 arms), **and** a 64-element K granule on the weight
-  operand via `MIXFP4_JOINT_KB` at +5.0% — same 8 arms.
-- **7–13%:** 16×32×128 or 32×16×128 via the blob path; K=64 on both operands via `MIXFP4_JOINT_K`
-  at +9.5%; 32-column B at K=64 at +12.5%.
+- **≤5%:** 32×32×128 (+3.4%) or **16×64×128 (+3.6%, A at its row floor)** — 3 bits, 8 arms — **and**
+  a 64-element K granule on the weight operand via `MIXFP4_JOINT_KB` at +5.0%, also 8 arms.
+- **7–13%:** 16×32×128 (+7.5%) or 32×16×128 (+10.1%) via the blob path; fine A *plus* weight-K=64
+  at +9.0%; K=64 on both operands via `MIXFP4_JOINT_K` at +9.5%; 32-column B at K=64 at +12.5%.
 - **24–33%:** anything needing a dispatch *inside* the k_tile body — which now means only the
   configurations too fine to fit the joint scheme's arm budget, including the 16×8×64 floor.
 
