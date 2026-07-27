@@ -122,6 +122,10 @@ using namespace cute;
 #if defined(MIXFP4_JOINT_K) && MIXFP4_JOINT_K
 #define MIXFP4_K_GRANULE 64
 #endif
+// Joint-K-B: only B's K granule drops to a k_block; A stays at the k_tile.
+#if defined(MIXFP4_JOINT_KB) && MIXFP4_JOINT_KB
+#define MIXFP4_K_GRANULE_B 64
+#endif
 #endif
 
 namespace mixfp4_detail {
@@ -1015,6 +1019,16 @@ struct CollectiveMma<
     static_assert(kNumArms <= 32,
                   "joint-K needs 2^(2*bits) arms; past 32 cicc outlines the k_tile body and spills "
                   "the accumulators. Use a coarser granule.");
+#elif defined(MIXFP4_JOINT_KB) && MIXFP4_JOINT_KB
+    // Joint-K, but only for B. In a linear layer B is the weight operand, which is where fine K
+    // granularity actually pays -- the quantizer groups weights in 16-element K blocks. A (the
+    // activations) keeps a k_tile-wide K granule. Cost is kAGran + 2*kBGran bits instead of
+    // 2*(kAGran + kBGran), which buys back a factor of 2^kAGran in arms.
+    constexpr int kNumArms  = 1 << (kAGran + 2 * kBGran);
+    static_assert(K_BLOCK_MAX == 2, "joint-K-B specialization assumes two k_blocks per k_tile");
+    static_assert(kNumArms <= 32,
+                  "joint-K-B needs 2^(kAGran + 2*kBGran) arms; past 32 cicc outlines the k_tile "
+                  "body and spills the accumulators. Use a coarser granule.");
 #else
     constexpr int kNumArms  = 1 << kBitsPerKBlock;
 #endif
@@ -1066,7 +1080,7 @@ struct CollectiveMma<
       return site;
     };
 
-#if defined(MIXFP4_JOINT_K) && MIXFP4_JOINT_K
+#if (defined(MIXFP4_JOINT_K) && MIXFP4_JOINT_K) || (defined(MIXFP4_JOINT_KB) && MIXFP4_JOINT_KB)
     // Same flags as read_site(), but taken from SHARED memory rather than from the register
     // fragment.
     //
@@ -1079,20 +1093,39 @@ struct CollectiveMma<
     //
     // tCsSFA_stage(v, m, k_block) is what copy() feeds to tCrSFA_copy_view(v, m, k_block), so
     // element 0 of atom m is the same byte read_site() reads out of the recast register word.
-    auto read_site_smem = [&](auto k_block) {
-      uint32_t pattern = 0;
+    // Index the smem view LINEARLY, not by (v, atom).
+    //
+    // tCsSF*_stage is the copy *source* view, shaped (CPY, CPY_MN, CPY_K): CPY_MN is the copy
+    // atom's tiling, which is not the MMA atom index -- for SFB the copy moves several atoms at a
+    // time, so tCsSFB_stage(0, 4, k) is not atom 4. What copy() does guarantee is that logical
+    // element i of the source lands in logical element i of tCr*_copy_view, which is a retile of
+    // the register fragment and so shares its linear order. Atom a's byte 0 is therefore flat
+    // index V*a, where V is the fragment's per-atom byte count.
+    //
+    // Getting this wrong is invisible whenever there is only one granule per operand (index 0 is
+    // index 0 under any layout) and wrong by ~0.37 relative error as soon as there are two.
+    constexpr int kSFAV = decltype(size<0>(tCrSFA))::value;
+    constexpr int kSFBV = decltype(size<0>(tCrSFB))::value;
+    auto read_a_smem = [&](auto k_block) {
+      auto s = tCsSFA_stage(_,_,k_block);
+      uint32_t bits = 0;
       for_each(make_int_sequence<kAGran>{}, [&](auto gi) {
         constexpr int g = decltype(gi)::value;
-        if ((tCsSFA_stage(_0{}, C<g * kAAtoms>{}, k_block).raw() & MIXFP4_FLAG_MASK) != 0) {
-          pattern |= 1u << g;
-        }
+        if ((s(C<kSFAV * g * kAAtoms>{}).raw() & MIXFP4_FLAG_MASK) != 0) { bits |= 1u << g; }
       });
+      return bits;
+    };
+    auto read_b_smem = [&](auto k_block) {
+      auto s = tCsSFB_stage(_,_,k_block);
+      uint32_t bits = 0;
       for_each(make_int_sequence<kBGran>{}, [&](auto gi) {
         constexpr int g = decltype(gi)::value;
-        if ((tCsSFB_stage(_0{}, C<g * kBAtoms>{}, k_block).raw() & MIXFP4_FLAG_MASK) != 0) {
-          pattern |= 1u << (kAGran + g);
-        }
+        if ((s(C<kSFBV * g * kBAtoms>{}).raw() & MIXFP4_FLAG_MASK) != 0) { bits |= 1u << g; }
       });
+      return bits;
+    };
+    auto read_site_smem = [&](auto k_block) {
+      uint32_t pattern = read_a_smem(k_block) | (read_b_smem(k_block) << kAGran);
       // Same guard as read_site(): tagging finer than the granule splits the warp across arms.
 #if defined(MIXFP4_DEBUG_UNIFORMITY) && MIXFP4_DEBUG_UNIFORMITY
       uint32_t const agree =
@@ -1140,6 +1173,16 @@ struct CollectiveMma<
       constexpr uint32_t kMask  = (1u << kBitsPerKBlock) - 1;
       constexpr uint32_t kMine  =
           (decltype(pattern_c)::value >> (decltype(k_block)::value * kBitsPerKBlock)) & kMask;
+      mixfp4::mma_kblock_blob<kMine>(
+#elif defined(MIXFP4_JOINT_KB) && MIXFP4_JOINT_KB
+      // Layout: A granule flags (shared by both k_blocks) in the low kAGran bits, then B's flags
+      // for k_block 0, then B's for k_block 1. Reassemble into the blob's per-k_block convention,
+      // which is A flags low, B flags above.
+      constexpr uint32_t kJoint = decltype(pattern_c)::value;
+      constexpr uint32_t kAbits = kJoint & ((1u << kAGran) - 1);
+      constexpr uint32_t kBbits =
+          (kJoint >> (kAGran + decltype(k_block)::value * kBGran)) & ((1u << kBGran) - 1);
+      constexpr uint32_t kMine  = kAbits | (kBbits << kAGran);
       mixfp4::mma_kblock_blob<kMine>(
 #else
       mixfp4::mma_kblock_blob<decltype(pattern_c)::value>(
@@ -1236,6 +1279,11 @@ struct CollectiveMma<
       // those registers are already resident and the reads are independent.
       mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(
           read_site_smem(_0{}) | (read_site_smem(_1{}) << kBitsPerKBlock), body);
+#elif defined(MIXFP4_JOINT_KB) && MIXFP4_JOINT_KB
+      // A's flags once for the whole k_tile, B's once per k_block.
+      mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(
+          read_a_smem(_0{}) | (read_b_smem(_0{}) << kAGran)
+                            | (read_b_smem(_1{}) << (kAGran + kBGran)), body);
 #else
       mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(read_site(_0{}), body);
 #endif

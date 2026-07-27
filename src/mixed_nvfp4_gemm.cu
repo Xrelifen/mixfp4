@@ -370,12 +370,24 @@ int run(int m, int n, int k, int warmup_iters, int bench_iters) {
   // The C++ path reads the flag once per k_tile (from k_block 0), so K granularity is the whole
   // k_tile. The generated PTX path dispatches per k_block and publishes its own K granule, which
   // is 64 -- one mma.sync. Tagging coarser than the kernel reads is always safe; finer is not.
-#if defined(MIXFP4_K_GRANULE)
-  constexpr int kKGranule     = MIXFP4_K_GRANULE;
+// A and B can carry different K granules: joint-K-B spends its arm budget on giving B (the weight
+// operand) a 64-element K granule while A stays at the k_tile.
+#if defined(MIXFP4_K_GRANULE_A)
+  constexpr int kKGranuleA    = MIXFP4_K_GRANULE_A;
+#elif defined(MIXFP4_K_GRANULE)
+  constexpr int kKGranuleA    = MIXFP4_K_GRANULE;
 #else
-  constexpr int kKGranule     = size<2>(ThreadBlockShape{});      // one k_tile
+  constexpr int kKGranuleA    = size<2>(ThreadBlockShape{});      // one k_tile
 #endif
-  static_assert(kKGranule > 0 && int(size<2>(ThreadBlockShape{})) % kKGranule == 0,
+#if defined(MIXFP4_K_GRANULE_B)
+  constexpr int kKGranuleB    = MIXFP4_K_GRANULE_B;
+#elif defined(MIXFP4_K_GRANULE)
+  constexpr int kKGranuleB    = MIXFP4_K_GRANULE;
+#else
+  constexpr int kKGranuleB    = size<2>(ThreadBlockShape{});
+#endif
+  static_assert(kKGranuleA > 0 && int(size<2>(ThreadBlockShape{})) % kKGranuleA == 0 &&
+                kKGranuleB > 0 && int(size<2>(ThreadBlockShape{})) % kKGranuleB == 0,
                 "K granule must divide the CTA tile's K");
 
   TagMode const tag_mode = parse_tag_mode();
@@ -412,11 +424,11 @@ int run(int m, int n, int k, int warmup_iters, int bench_iters) {
     bool const force_a = (tag_mode == TagMode::kAllA || tag_mode == TagMode::kAll);
     bool const force_b = (tag_mode == TagMode::kAllB || tag_mode == TagMode::kAll);
     if (rand_a || force_a) {
-      tag(make_tensor(block_sfa.host_data(), layout_sfa), m, k, a_granule_map, kKGranule,
+      tag(make_tensor(block_sfa.host_data(), layout_sfa), m, k, a_granule_map, kKGranuleA,
           0x9e3779b97f4a7c15ull, force_a);
     }
     if (rand_b || force_b) {
-      tag(make_tensor(block_sfb.host_data(), layout_sfb), n, k, b_granule_map, kKGranule,
+      tag(make_tensor(block_sfb.host_data(), layout_sfb), n, k, b_granule_map, kKGranuleB,
           0xbf58476d1ce4e5b9ull, force_b);
     }
   }
@@ -434,8 +446,8 @@ int run(int m, int n, int k, int warmup_iters, int bench_iters) {
     return 0;
   }
   std::cout << "Format tagging: " << tag_mode_name(tag_mode)
-            << "; granule = " << kAGranuleRows << " rows of A x " << kBGranuleCols
-            << " cols of B x " << kKGranule << " K" << std::endl;
+            << "; granule = " << kAGranuleRows << " rows of A x " << kKGranuleA << " K"
+            << ", " << kBGranuleCols << " cols of B x " << kKGranuleB << " K" << std::endl;
 
   block_a.sync_device();
   block_b.sync_device();
