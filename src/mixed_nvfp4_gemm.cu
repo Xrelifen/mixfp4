@@ -163,11 +163,35 @@ using MixedDispatchPolicy = cutlass::gemm::MainloopSm120TmaWarpSpecializedBlockS
 // AtomLayoutMNK/PermTile{M,N,K} the builder derived (public members of the builder struct) -- so
 // thread/value partitioning is identical to the stock kernel, only the atom's fma() differs.
 using MixedMmaOp = cute::SM120::BLOCKSCALED::SM120_16x8x64_TN_VS_Mixed;
+// The TiledMma's N permutation. The builder picks a 32-element pattern
+// (Shape<_8,_2,_2>, Stride<_1,_16,_8>) for any tile with N >= 32, and that 32 is what
+// make_tiled_copy_B turns into a 32-column tiler -- which is why a warp tile narrower than 32
+// columns cannot be sliced ("src mode 1 = 4 against dst mode 1 = 2" for a 1x8 arrangement).
+//
+// CUTLASS also defines a 16-element pattern, used when the CTA tile itself is 16 wide. Applying
+// it to a 128-wide tile makes the permutation repeat every 16 columns instead of every 32, which
+// is what a 1x8 warp arrangement needs. A 16-column warp then makes an 8-column B granule cost 2
+// dispatch bits instead of 4.
+//
+// The permutation is a bijection on N and is applied consistently to the MMA partitioning, the
+// smem copies and the host-side granule map (build_granule_map derives it from this very
+// TiledMma), so correctness does not depend on which of the two patterns is used -- but the
+// scale-factor layout is built independently by the builder, so this needs verifying, not
+// assuming.
+#ifndef MIXFP4_PERM_N
+#define MIXFP4_PERM_N 32
+#endif
+#if MIXFP4_PERM_N == 16
+using MixedPermTileN = Layout<Shape<_8,_2>, Stride<_1,_8>>;
+#else
+using MixedPermTileN = typename StdMainloopBuilder::PermTileN;
+#endif
+
 using MixedTiledMma = decltype(cute::make_tiled_mma(
     MixedMmaOp{},
     MixedAtomLayoutMNK{},
     Tile<typename StdMainloopBuilder::PermTileM,
-         typename StdMainloopBuilder::PermTileN,
+         MixedPermTileN,
          typename StdMainloopBuilder::PermTileK>{}));
 
 // The shared-memory copy atom's LDSM width is picked by the builder from the CTA tile's N
