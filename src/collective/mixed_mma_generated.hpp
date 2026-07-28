@@ -30,12 +30,15 @@
 
 namespace mixfp4 {
 
-// acc: (MMA,MMA_M,MMA_N) accumulator fragment.  a: (V,MMA_M) uint32.  b: (V,MMA_N) uint32.
-// sfa: (1,MMA_M) uint32.  sfb: (1,MMA_N) uint32.  All indices are compile-time constants.
-template <class TAcc, class TA, class TB, class TSFA, class TSFB>
+// The jump index, split out so the caller can compute it a k_block EARLY.
+//
+// It reads only the scale-factor fragments, which copy_kblock() has already loaded for k_block+1
+// by the time k_block's MMAs run. Computing it there puts the whole extract/pack chain, and the
+// IMAD -> LDC -> BRX that consumes it, off the critical path into the branch. See
+// MIXFP4_PIPE_IX in the mainloop.
+template <class TSFA, class TSFB>
 CUTLASS_DEVICE void
-mma_kblock(TAcc& acc, TA const& a, TB const& b, TSFA const& sfa, TSFB const& sfb) {
-  uint32_t ix[1];
+mma_index(TSFA const& sfa, TSFB const& sfb, uint32_t (&ix)[1]) {
 #if defined(MIXFP4_FAKE_INDEX) && MIXFP4_FAKE_INDEX
   ix[0] = blockIdx.x & 63u;
 #elif defined(MIXFP4_PRMT_INDEX) && MIXFP4_PRMT_INDEX
@@ -43,7 +46,14 @@ mma_kblock(TAcc& acc, TA const& a, TB const& b, TSFA const& sfa, TSFB const& sfb
 #else
   ix[0] = (((sfa(cute::Int<0>{}, cute::Int<0>{}) >> 7) & 1u) << 0) | (((sfa(cute::Int<0>{}, cute::Int<1>{}) >> 7) & 1u) << 1) | (((sfb(cute::Int<0>{}, cute::Int<0>{}) >> 7) & 1u) << 2) | (((sfb(cute::Int<0>{}, cute::Int<2>{}) >> 7) & 1u) << 3) | (((sfb(cute::Int<0>{}, cute::Int<4>{}) >> 7) & 1u) << 4) | (((sfb(cute::Int<0>{}, cute::Int<6>{}) >> 7) & 1u) << 5);
 #endif
+}
 
+// acc: (MMA,MMA_M,MMA_N) accumulator fragment.  a: (V,MMA_M) uint32.  b: (V,MMA_N) uint32.
+// sfa: (1,MMA_M) uint32.  sfb: (1,MMA_N) uint32.  All indices are compile-time constants.
+template <class TAcc, class TA, class TB, class TSFA, class TSFB>
+CUTLASS_DEVICE void
+mma_kblock_ix(TAcc& acc, TA const& a, TB const& b, TSFA const& sfa, TSFB const& sfb,
+              uint32_t const (&ix)[1]) {
   asm volatile(
       "{\n"
       "  .reg .b32 %sf<16>;\n"
@@ -2327,6 +2337,14 @@ mma_kblock(TAcc& acc, TA const& a, TB const& b, TSFA const& sfa, TSFB const& sfb
         "r"(sfb(cute::Int<0>{}, cute::Int<6>{})),
         "r"(sfb(cute::Int<0>{}, cute::Int<7>{})),
         "r"(ix[0]));
+}
+
+template <class TAcc, class TA, class TB, class TSFA, class TSFB>
+CUTLASS_DEVICE void
+mma_kblock(TAcc& acc, TA const& a, TB const& b, TSFA const& sfa, TSFB const& sfb) {
+  uint32_t ix[1];
+  mma_index(sfa, sfb, ix);
+  mma_kblock_ix(acc, a, b, sfa, sfb, ix);
 }
 
 } // namespace mixfp4

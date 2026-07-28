@@ -1062,9 +1062,15 @@ struct CollectiveMma<
     // while leaving the branch outside the k_tile body where it costs cycles rather than stalls.
     constexpr int kNumArms  = 1 << (2 * kAGran + kBGran);
     static_assert(K_BLOCK_MAX == 2, "joint-K-A specialization assumes two k_blocks per k_tile");
+    // -DMIXFP4_ALLOW_OUTLINE=1 lifts the cap, which is what pricing the arm-count curve past 32
+    // requires: 64 arms with a single per-k_tile dispatch is the cheapest branch placement there
+    // is, so it bounds what any 6-bit granule can achieve however often it branches.
+#if !(defined(MIXFP4_ALLOW_OUTLINE) && MIXFP4_ALLOW_OUTLINE)
     static_assert(kNumArms <= 32,
                   "joint-K-A needs 2^(2*kAGran + kBGran) arms; past 32 cicc outlines the k_tile "
-                  "body and spills the accumulators. Use a coarser granule.");
+                  "body and spills the accumulators. Use a coarser granule, or set "
+                  "-DMIXFP4_ALLOW_OUTLINE=1 to measure it anyway.");
+#endif
 #else
     constexpr int kNumArms  = 1 << kBitsPerKBlock;
 #endif
@@ -1208,6 +1214,23 @@ struct CollectiveMma<
     };
 #endif
 
+#if defined(MIXFP4_PIPE_IX) && MIXFP4_PIPE_IX
+    // One jump index per k_block, kept in the same shape as the register pipeline it shadows:
+    // slot k holds the index for k_block k, and it is filled by the copy_kblock(k) that loads that
+    // k_block's operands -- one k_block ahead of the MMAs that consume it.
+    static_assert(MIXFP4_PTX, "MIXFP4_PIPE_IX only applies to the generated-PTX dispatch");
+    // k_block_next in the loop bodies is a plain int -- the ternary that wraps it collapses the
+    // integral constant -- so the slot has to be named as a compile-time constant here instead.
+    constexpr int kKBlocks = decltype(K_BLOCK_MAX)::value;
+    uint32_t ix_pipe[kKBlocks][MIXFP4_GEN_GROUPS];
+    auto fill_ix = [&](auto k_block_c) {
+      constexpr int kSlot = decltype(k_block_c)::value;
+      mixfp4::mma_index(recast<uint32_t>(tCrSFA(_,_,C<kSlot>{})),
+                        recast<uint32_t>(tCrSFB(_,_,C<kSlot>{})),
+                        ix_pipe[kSlot]);
+    };
+#endif
+
     // One k_block's worth of MMAs, with every atom's format fixed at compile time by `pattern`.
     //
     // This open-codes cute::gemm's dispatch [4] rather than calling it, because a single
@@ -1226,11 +1249,22 @@ struct CollectiveMma<
 #if defined(MIXFP4_DEBUG_UNIFORMITY) && MIXFP4_DEBUG_UNIFORMITY
       (void) read_site(k_block);
 #endif
+#if defined(MIXFP4_PIPE_IX) && MIXFP4_PIPE_IX
+      // Index computed one k_block earlier (see the k_tile bodies below), so the branch reads a
+      // register that has been resident for 16 MMAs.
+      mixfp4::mma_kblock_ix(accum,
+                            recast<uint32_t>(tCrA(_,_,k_block)),
+                            recast<uint32_t>(tCrB(_,_,k_block)),
+                            recast<uint32_t>(tCrSFA(_,_,k_block)),
+                            recast<uint32_t>(tCrSFB(_,_,k_block)),
+                            ix_pipe[decltype(k_block)::value]);
+#else
       mixfp4::mma_kblock(accum,
                          recast<uint32_t>(tCrA(_,_,k_block)),
                          recast<uint32_t>(tCrB(_,_,k_block)),
                          recast<uint32_t>(tCrSFA(_,_,k_block)),
                          recast<uint32_t>(tCrSFB(_,_,k_block)));
+#endif
 #elif defined(MIXFP4_BLOB) && MIXFP4_BLOB
       // Same per-k_tile C++ dispatch as the default path, but this k_block's MMAs are one opaque
       // blob, which is what keeps cicc from outlining the body past 8 arms.
@@ -1310,6 +1344,10 @@ struct CollectiveMma<
         }
 
         copy_kblock(k_block_next);
+#if defined(MIXFP4_PIPE_IX) && MIXFP4_PIPE_IX
+        // consumed by the NEXT gemm_kblock, 16 MMAs from now
+        fill_ix(C<(decltype(k_block)::value + 1) % kKBlocks>{});
+#endif
         gemm_kblock(site_c, k_block);
 
       });
@@ -1331,6 +1369,9 @@ struct CollectiveMma<
 
         if (k_block_next > 0) {
           copy_kblock(k_block_next);
+#if defined(MIXFP4_PIPE_IX) && MIXFP4_PIPE_IX
+          fill_ix(C<(decltype(k_block)::value + 1) % kKBlocks>{});
+#endif
         }
         gemm_kblock(site_c, k_block);
 
@@ -1374,6 +1415,9 @@ struct CollectiveMma<
     pipeline.consumer_wait(smem_pipe_read);
 
     copy_kblock(_0{});
+#if defined(MIXFP4_PIPE_IX) && MIXFP4_PIPE_IX
+    fill_ix(_0{});   // seed the pipeline: k_block 0 of the first k_tile
+#endif
 
 #if defined(MIXFP4_SPLIT_K) && MIXFP4_SPLIT_K
     // ---------------------------------------------------------------------------------------

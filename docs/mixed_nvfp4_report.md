@@ -460,6 +460,46 @@ bottleneck**; the two in-body jumps and the 64-arm footprint are. Since that is 
 case, a per-k_block dispatch has a floor around +22% and cannot reach 8% however the index is
 computed — which also rules out precomputing it into a side array.
 
+### Arm count is the currency, not branch count
+
+The obvious remaining move is to branch less often — one dispatch per k_tile instead of two, or one
+per two k_tiles. It does not help, and the reason is that the cost was never the branch.
+
+Measured with a **single** per-k_tile dispatch throughout, i.e. the cheapest branch placement that
+exists, extending the curve past the point the blob generator used to refuse:
+
+| arms | bits | dispatches / k_tile | TFLOP/s | vs stock |
+|---|---|---|---|---|
+| 8 | 3 | 1 | 1166.5 | +3.4% |
+| 16 | 4 | 1 | 1113.8 | +7.5% |
+| 32 | 5 | 1 | 1082.5 | +10.1% |
+| **64** | **6** | **1** | **980.9** | **+23.1%** |
+
+The 64-arm row is `MIXFP4_ALLOW_OUTLINE=1` with A at one atom and B at four (6 bits, 4096 OMMAs,
+`REG:168`, `CALL:0` — it inlines cleanly, the old cap was conservative). Branching *once* per
+k_tile at 64 arms buys almost nothing over branching twice: 980.9 against the two-dispatch path's
+962.5 at `MIXFP4_TAG=none`. The expansion is what costs, and `MIXFP4_TAG=none` versus random tagging
+prices it directly at **75 TFLOP/s** of pure instruction-cache pressure.
+
+This settles the 16×16 question independently of K. A warp's footprint is fixed at
+`CTA_M·CTA_N/8` = 2048 elements, so a 16×16 granule is 6 flag bits and **64 arms in every
+arrangement of 8 warps**. Sixty-four arms costs +23% at the cheapest possible branch placement, so
+16×16 spatial granularity cannot reach 8% at *any* K granule or branch frequency. The 8% budget
+buys about **4 bits — 16 arms** — and that is the number worth designing against.
+
+Two more attempts on the index, both negative and both instructive:
+
+| attempt | TFLOP/s vs the 887.6 baseline |
+|---|---|
+| `MIXFP4_PRMT_INDEX` — PRMT gather, fewer instructions | 878.1 |
+| `MIXFP4_PIPE_IX` — index computed a k_block early | 844.9 |
+
+Pipelining the index is the same trick that was worth +2 points on the joint-K-A path, and here it
+*loses* 43. There the index fed a branch that had nothing else to hide behind; here the kernel is
+issue-bound, and holding `ix` live across 16 MMAs costs register lifetime for latency that was not
+on the critical path. The lesson generalises: on this kernel the dispatch is bound by issue slots
+and instruction-cache footprint, not by the latency of computing where to jump.
+
 So the exchange rate stands: **one operand at the `mma.sync` floor is ~5%; both is ~36%, with a
 hard floor near +22% even with a free index.**
 

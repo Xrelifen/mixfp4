@@ -331,15 +331,33 @@ def main() -> int:
 
 namespace mixfp4 {{
 
+// The jump index, split out so the caller can compute it a k_block EARLY.
+//
+// It reads only the scale-factor fragments, which copy_kblock() has already loaded for k_block+1
+// by the time k_block's MMAs run. Computing it there puts the whole extract/pack chain, and the
+// IMAD -> LDC -> BRX that consumes it, off the critical path into the branch. See
+// MIXFP4_PIPE_IX in the mainloop.
+template <class TSFA, class TSFB>
+CUTLASS_DEVICE void
+mma_index(TSFA const& sfa, TSFB const& sfb, uint32_t (&ix)[{cfg.groups}]) {{
+{emit_index_helper(cfg)}
+}}
+
 // acc: (MMA,MMA_M,MMA_N) accumulator fragment.  a: (V,MMA_M) uint32.  b: (V,MMA_N) uint32.
 // sfa: (1,MMA_M) uint32.  sfb: (1,MMA_N) uint32.  All indices are compile-time constants.
 template <class TAcc, class TA, class TB, class TSFA, class TSFB>
 CUTLASS_DEVICE void
+mma_kblock_ix(TAcc& acc, TA const& a, TB const& b, TSFA const& sfa, TSFB const& sfb,
+              uint32_t const (&ix)[{cfg.groups}]) {{
+{statements}
+}}
+
+template <class TAcc, class TA, class TB, class TSFA, class TSFB>
+CUTLASS_DEVICE void
 mma_kblock(TAcc& acc, TA const& a, TB const& b, TSFA const& sfa, TSFB const& sfb) {{
   uint32_t ix[{cfg.groups}];
-{emit_index_helper(cfg)}
-
-{statements}
+  mma_index(sfa, sfb, ix);
+  mma_kblock_ix(acc, a, b, sfa, sfb, ix);
 }}
 
 }} // namespace mixfp4
