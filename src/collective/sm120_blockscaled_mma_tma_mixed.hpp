@@ -125,6 +125,10 @@ using namespace cute;
 // Joint-K-B: only B's K granule drops to a k_block; A stays at the k_tile.
 #if defined(MIXFP4_JOINT_KB) && MIXFP4_JOINT_KB
 #define MIXFP4_K_GRANULE_B 64
+// NOT defaulted on here, unlike joint-K-A. Measured at 16 arms with A pinned to E2M1:
+// 1101.0 un-pipelined against 1083.9 pipelined. Same signature as the 16x16x64 path -- this
+// configuration is issue-bound, so taking latency off the branch costs register lifetime to
+// hide something that was not on the critical path. Available as -DMIXFP4_PIPE_FLAGS=1.
 #endif
 // Joint-K-A: the mirror image -- only A's K granule drops to a k_block, B stays at the k_tile.
 // This is what a 16 rows x 64 K granule on A costs: 2*kAGran + kBGran bits. With A at one atom
@@ -1029,7 +1033,31 @@ struct CollectiveMma<
     static_assert(kMmaN % kBAtoms == 0, "B granule must divide the warp's N atom count");
     constexpr int kAGran    = kMmaM / kAAtoms;
     constexpr int kBGran    = kMmaN / kBAtoms;
-    constexpr int kBitsPerKBlock = kAGran + kBGran;
+#if defined(MIXFP4_JOINT_KB) && MIXFP4_JOINT_KB
+    constexpr bool defined_joint_kb_for_a_all_e2m1 = true;
+#else
+    constexpr bool defined_joint_kb_for_a_all_e2m1 = false;
+#endif
+    (void) defined_joint_kb_for_a_all_e2m1;
+
+    // -DMIXFP4_A_ALL_E2M1=1: A is E2M1 everywhere, so it contributes NO dispatch bits and the
+    // whole budget goes to B. Leaving A's flag in the index and merely never setting it is not
+    // enough -- the bit still doubles the arm count and deepens the branch tree, which measured
+    // 1064.0 against 1055.6 for genuinely-mixed A, i.e. almost nothing. kADisp is the number of
+    // bits A occupies in the dispatch INDEX; kAGran stays the blob's own A field width, since the
+    // generated blob still encodes an (always-zero) A flag in its low bits.
+#if defined(MIXFP4_A_ALL_E2M1) && MIXFP4_A_ALL_E2M1
+    // Only the joint-K-B path remaps the A-less index back into the blob's (A low, B above)
+    // field layout. On the other paths the index would be fed to the blob verbatim and every arm
+    // would be miscoded -- caught as unequal per-site OMMA counts ({0:96, 1:96, 2:32, 3:32}) by
+    // the patcher, which is exactly what that invariant is for.
+    static_assert(defined_joint_kb_for_a_all_e2m1,
+                  "MIXFP4_A_ALL_E2M1 currently requires -DMIXFP4_JOINT_KB=1");
+    constexpr int kADisp = 0;
+#else
+    constexpr int kADisp = kAGran;
+#endif
+    constexpr int kBitsPerKBlock = kADisp + kBGran;
 
     // -DMIXFP4_JOINT_K=1: specialize the k_tile on *both* k_blocks' patterns at once, so the
     // format can change every 64 elements of K while the dispatch stays OUTSIDE the k_tile body.
@@ -1051,7 +1079,7 @@ struct CollectiveMma<
     // granularity actually pays -- the quantizer groups weights in 16-element K blocks. A (the
     // activations) keeps a k_tile-wide K granule. Cost is kAGran + 2*kBGran bits instead of
     // 2*(kAGran + kBGran), which buys back a factor of 2^kAGran in arms.
-    constexpr int kNumArms  = 1 << (kAGran + 2 * kBGran);
+    constexpr int kNumArms  = 1 << (kADisp + 2 * kBGran);
     static_assert(K_BLOCK_MAX == 2, "joint-K-B specialization assumes two k_blocks per k_tile");
     static_assert(kNumArms <= 32,
                   "joint-K-B needs 2^(kAGran + 2*kBGran) arms; past 32 cicc outlines the k_tile "
@@ -1280,9 +1308,11 @@ struct CollectiveMma<
       // for k_block 0, then B's for k_block 1. Reassemble into the blob's per-k_block convention,
       // which is A flags low, B flags above.
       constexpr uint32_t kJoint = decltype(pattern_c)::value;
-      constexpr uint32_t kAbits = kJoint & ((1u << kAGran) - 1);
+      constexpr uint32_t kAbits = kJoint & ((1u << kADisp) - 1);
       constexpr uint32_t kBbits =
-          (kJoint >> (kAGran + decltype(k_block)::value * kBGran)) & ((1u << kBGran) - 1);
+          (kJoint >> (kADisp + decltype(k_block)::value * kBGran)) & ((1u << kBGran) - 1);
+      // kAGran, not kADisp: the blob's own A field keeps its width even when A is
+      // absent from the dispatch index.
       constexpr uint32_t kMine  = kAbits | (kBbits << kAGran);
       mixfp4::mma_kblock_blob<kMine>(
 #elif defined(MIXFP4_JOINT_KA) && MIXFP4_JOINT_KA
@@ -1398,9 +1428,13 @@ struct CollectiveMma<
           read_site_smem(_0{}) | (read_site_smem(_1{}) << kBitsPerKBlock), body);
 #elif defined(MIXFP4_JOINT_KB) && MIXFP4_JOINT_KB
       // A's flags once for the whole k_tile, B's once per k_block.
+      // Only k_block 1's flags need the smem round trip; k_block 0's operands are resident in
+      // registers at dispatch time. Reading them back from shared memory put an LDS on the
+      // branch's critical path for nothing -- the same fix that was worth ~20 TFLOP/s on
+      // joint-K-A.
       mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(
-          read_a_smem(_0{}) | (read_b_smem(_0{}) << kAGran)
-                            | (read_b_smem(_1{}) << (kAGran + kBGran)), body);
+          (kADisp ? read_a_reg(_0{}) : 0u) | (read_b_reg(_0{}) << kADisp)
+                                           | (read_b_smem(_1{}) << (kADisp + kBGran)), body);
 #elif defined(MIXFP4_JOINT_KA) && MIXFP4_JOINT_KA
       // A's flags once per k_block, B's once for the whole k_tile. Only k_block 1 needs the smem
       // read; the rest is already in the register fragment.
@@ -1548,7 +1582,8 @@ struct CollectiveMma<
 
       mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(read_site(_1{}), kb1_region_tail);
     }
-#elif defined(MIXFP4_JOINT_KA) && MIXFP4_JOINT_KA && \
+#elif ((defined(MIXFP4_JOINT_KA) && MIXFP4_JOINT_KA) || \
+       (defined(MIXFP4_JOINT_KB) && MIXFP4_JOINT_KB)) && \
       defined(MIXFP4_PIPE_FLAGS) && MIXFP4_PIPE_FLAGS
     // ---------------------------------------------------------------------------------------
     // Software-pipeline the dispatch index itself.
@@ -1562,8 +1597,13 @@ struct CollectiveMma<
     // next arm index there gives the load this k_block's 16 MMAs to complete behind, and leaves
     // the branch with a value already in a register.
     auto next_pattern = [&] {
+#if defined(MIXFP4_JOINT_KA) && MIXFP4_JOINT_KA
       return read_a_reg(_0{}) | (read_a_smem(_1{}) << kAGran)
                               | (read_b_reg(_0{}) << (2 * kAGran));
+#else   // joint-K-B: A once per k_tile (or absent), B once per k_block
+      return (kADisp ? read_a_reg(_0{}) : 0u) | (read_b_reg(_0{}) << kADisp)
+                                              | (read_b_smem(_1{}) << (kADisp + kBGran));
+#endif
     };
 
     uint32_t pattern_cur  = next_pattern();

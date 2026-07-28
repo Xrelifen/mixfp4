@@ -644,6 +644,38 @@ Measured at 4096³ against stock NVFP4, all correct:
 | 16 × 16 × 128 | 6 | 64 | 2×/k_tile | 884.1 | +36.6% |
 | **16 × 16 × 64** | 6 | 64 | 2×/k_tile | 887.6 | **+35.9%** |
 
+#### Pinning one operand to E2M1
+
+If A is E2M1 everywhere, it contributes no dispatch bits and the whole budget goes to B. This is
+the cheapest mixed-format configuration measured anywhere in this work:
+
+| granule (A pure E2M1) | bits | arms | TFLOP/s | vs stock |
+|---|---|---|---|---|
+| **B 64 cols × 64 K** | 2 | 4 | **1176.5** | **+2.6%** |
+| B 32 cols × 64 K | 4 | 16 | 1101.0 | +9.7% |
+| B 8 cols × 64 K (B's hardware floor) | 16 | 65536 | — | not buildable |
+
+Across shapes the 4-arm point is +2.1% to +4.4%, and it keeps a genuine 64-element K granule on the
+weight operand.
+
+Two implementation notes, both of which the existing invariants caught:
+
+- Removing A from the dispatch has to be real. Leaving its flag in the index and merely never
+  setting it still doubles the arm count and deepens the branch tree: 1064.0 against 1055.6 for
+  genuinely-mixed A, i.e. nothing. `MIXFP4_A_ALL_E2M1=1` drops the bit from the index while leaving
+  the generated blob's own (always-zero) A field intact, which is what took 16 arms from 1064.0 to
+  1099.5.
+- Such a build reaches only **two** of the four format sites, since sites 1 and 3 need E0M3 on A.
+  The patcher rightly refuses it; `--allow-missing-sites` accepts it while still requiring equal
+  counts among the sites present. And on any path other than joint-K-B the A-less index would be
+  fed to the blob verbatim and miscode every arm -- which showed up immediately as unequal per-site
+  counts ({0:96, 1:96, 2:32, 3:32}), so that combination is now a `static_assert`.
+
+**8×64 on B is out of reach for a different reason than everything above**: the LDSM copy atom
+rejects any warp tile narrower than 64 columns ("TiledCopy uses too few vals", verified at both 32
+and 16 columns), so a warp always owns at least 8 n-atoms and an 8-column granule is at least 8
+bits — 16 jointly at K=64.
+
 Two readings worth carrying away. **K granularity is nearly free until it costs a bit**: 16×16×128
 and 16×16×64 are within noise of each other (884.1 vs 887.6), because coarsening K changes neither
 the bit count nor the branch placement. And **coarser is not always cheaper**: 64×64×64 is

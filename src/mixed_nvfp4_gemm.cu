@@ -352,7 +352,7 @@ std::vector<int> build_granule_map(int atoms_per_granule) {
   return mn_to_granule;
 }
 
-enum class TagMode { kNone, kRandom, kRowCol, kAllA, kAllB, kAll };
+enum class TagMode { kNone, kRandom, kRowCol, kRandomB, kAllA, kAllB, kAll };
 
 static TagMode parse_tag_mode() {
   const char *e = std::getenv("MIXFP4_TAG");
@@ -364,6 +364,11 @@ static TagMode parse_tag_mode() {
   // for its whole k-loop, so the instruction-cache working set is one arm instead of
   // the whole jump table, while the dispatch still runs and still varies across warps.
   if (s == "rowcol")           { return TagMode::kRowCol; }
+  // A left entirely E2M1, B mixed at random per granule. Models "keep one matrix pure,
+  // spend the whole dispatch budget on the other" -- A then contributes a flag bit that
+  // is always zero, so half the arms are compiled but unreachable, and unreachable arms
+  // are never fetched.
+  if (s == "randb")            { return TagMode::kRandomB; }
   if (s == "a")                { return TagMode::kAllA; }
   if (s == "b")                { return TagMode::kAllB; }
   if (s == "all")              { return TagMode::kAll; }
@@ -374,6 +379,7 @@ static const char *tag_mode_name(TagMode t) {
   switch (t) {
     case TagMode::kNone:   return "none (all E2M1 -- site 0 only)";
     case TagMode::kRowCol: return "random per row/col granule, constant along K";
+    case TagMode::kRandomB: return "A all E2M1, B random per granule";
     case TagMode::kAllA:   return "all-A (E0M3 x E2M1 -- site 1 only)";
     case TagMode::kAllB:   return "all-B (E2M1 x E0M3 -- site 2 only)";
     case TagMode::kAll:    return "all (E0M3 x E0M3 -- site 3 only)";
@@ -484,7 +490,8 @@ int run(int m, int n, int k, int warmup_iters, int bench_iters) {
     std::vector<int> const b_granule_map =
         build_granule_map<false>(MIXFP4_B_ATOMS_PER_GRANULE);
     bool const rand_a  = (tag_mode == TagMode::kRandom || tag_mode == TagMode::kRowCol);
-    bool const rand_b  = (tag_mode == TagMode::kRandom || tag_mode == TagMode::kRowCol);
+    bool const rand_b  = (tag_mode == TagMode::kRandom || tag_mode == TagMode::kRowCol ||
+                          tag_mode == TagMode::kRandomB);
     bool const kinv    = (tag_mode == TagMode::kRowCol);
     bool const force_a = (tag_mode == TagMode::kAllA || tag_mode == TagMode::kAll);
     bool const force_b = (tag_mode == TagMode::kAllB || tag_mode == TagMode::kAll);

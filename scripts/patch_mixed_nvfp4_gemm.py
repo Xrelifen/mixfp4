@@ -178,6 +178,12 @@ def main() -> int:
     parser.add_argument(
         "--cuobjdump", type=pathlib.Path, default=pathlib.Path("/usr/local/cuda/bin/cuobjdump")
     )
+    parser.add_argument(
+        "--allow-missing-sites", action="store_true",
+        help="accept a build that emits only some of the four format sites. Legitimate when one "
+             "operand is pinned to E2M1 (-DMIXFP4_A_ALL_E2M1=1), which makes the two E0M3-on-A "
+             "sites unreachable, so the kernel contains only sites 0 and 2. Equal counts among "
+             "the sites that ARE present is still required.")
     args = parser.parse_args()
 
     data = bytearray(args.baseline.read_bytes())
@@ -194,7 +200,11 @@ def main() -> int:
     print(f"found {len(ommas)} OMMAs; per-site counts: " +
           ", ".join(f"site {s}={counts[s]}" for s in sorted(counts)))
     if sorted(counts) != [0, 1, 2, 3]:
-        raise RuntimeError(f"expected all four dispatch sites to be present, got {sorted(counts)}")
+        if not args.allow_missing_sites:
+            raise RuntimeError(
+                f"expected all four dispatch sites to be present, got {sorted(counts)}. If one "
+                f"operand is pinned to E2M1 this is expected -- pass --allow-missing-sites.")
+        print(f"note: only sites {sorted(counts)} are present (--allow-missing-sites)")
     if len(set(counts.values())) != 1:
         raise RuntimeError(
             f"the four sites should emit equal numbers of OMMAs, got {dict(counts)} -- ptxas may "
