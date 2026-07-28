@@ -516,8 +516,22 @@ same arm is taken every iteration and arm variety is removed):
 | 1 | 975.1 | **−167.5** |
 | 2 | 962.3 | **−12.8** |
 
-**The cost is not per-dispatch. Going 0→1 costs 167; going 1→2 costs 13.** It is a fixed penalty
-for the k-loop containing *any* branch at all.
+**At 64 arms the cost is not per-dispatch: going 0→1 costs 167, going 1→2 costs 13.** The first
+in-loop branch is what hurts; further ones are nearly free.
+
+That first-branch cost is **not** a constant, though — it scales steeply with arm count, which an
+earlier revision of this section got wrong. One in-loop dispatch, measured against the ceiling:
+
+| arms | TFLOP/s | cost |
+|---|---|---|
+| 4 | 1176.5 | 15 |
+| 8 | 1166.5 | 25 |
+| 16 | 1113.8 | 77 |
+| 32 | 1082.5 | 108 |
+| 64 | 975.1 | 215 |
+
+So "any branch in the loop costs 167" is only true at six bits. At two or three bits an in-loop
+dispatch is nearly free, which is what makes the pinned-operand configurations below work.
 
 The mechanism is cross-iteration software pipelining. The stock mainloop overlaps the tail of
 k_tile *i* with the head of *i+1* — that is what keeps the tensor pipe fed. A branch anywhere in
