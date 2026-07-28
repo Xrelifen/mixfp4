@@ -503,6 +503,154 @@ and instruction-cache footprint, not by the latency of computing where to jump.
 So the exchange rate stands: **one operand at the `mma.sync` floor is ~5%; both is ~36%, with a
 hard floor near +22% even with a free index.**
 
+### The actual bottleneck for 16×16×64, and everything tried against it
+
+Everything above treats the dispatch as a collection of separable costs — index, branch, arms,
+i-cache — and tries to shave each. That framing is wrong, and the measurement that shows it is
+this one. All three rows are 64 arms with the instruction cache warm (`MIXFP4_TAG=rowcol`, so the
+same arm is taken every iteration and arm variety is removed):
+
+| dispatches inside the k-loop | TFLOP/s | Δ |
+|---|---|---|
+| 0 — hoisted per CTA | 1142.6 | — |
+| 1 | 975.1 | **−167.5** |
+| 2 | 962.3 | **−12.8** |
+
+**The cost is not per-dispatch. Going 0→1 costs 167; going 1→2 costs 13.** It is a fixed penalty
+for the k-loop containing *any* branch at all.
+
+The mechanism is cross-iteration software pipelining. The stock mainloop overlaps the tail of
+k_tile *i* with the head of *i+1* — that is what keeps the tensor pipe fed. A branch anywhere in
+the loop body ends it, and the whole 167 is paid on the first one. Everything after that is noise,
+which is exactly what the optimisation attempts show: every micro-lever below is worth single
+digits against a 167-point structural cost that none of them touches.
+
+That also settles the granularity question by construction:
+
+> Zero in-loop branches requires the format to be constant across everything the loop covers. A
+> finite K granule means the instruction sequence changes partway down K, which *is* a branch in
+> the loop, by definition.
+
+Splitting the loop instead — separate k-loops per pattern, with K permuted so same-pattern
+k_blocks are contiguous, which is legal since K is a contraction index — does not escape it. All
+8 warps share one k-loop and each has its *own* 6-bit pattern per k_block, so no single
+permutation makes every warp's pattern constant. The span over which no warp's pattern changes
+*is* the K granule; splitting the loop only renames the trade.
+
+#### Everything tried
+
+Structure (the terms that matter):
+
+| approach | result |
+|---|---|
+| per-k_block dispatch, `brx.idx`, 64 arms | 887.6 (+35.9%) |
+| per-k_block dispatch, balanced `bra` tree | 790.2 (+52.8%) |
+| one dispatch per k_tile, 64 arms (K=128) | 976.5 (+23.6%) |
+| **dispatch hoisted per CTA** (needs K-invariance) | **1142.6 (+5.8%)** |
+| joint specialisation over both k_blocks (12 bits) | 4096 arms — unbuildable |
+| CTA tile K=64, so 6 bits suffice out-of-body | ceiling **720.8, −40%** before any dispatch |
+| 16 warps (4×4), halving the warp tile to 4 bits | cooperative kernel asserts 256 threads |
+| 2×4 warps, to halve arm size | LDSM copy atom: "TiledCopy uses too few vals" |
+| 64 arms out-of-body at K=128 | outlines, `STACK:864`, `CALL:1` |
+
+Mixing code against branches (dispatch groups — code adds across groups instead of multiplying):
+
+| groups | arms/group | OMMAs per k_block | jumps per k_block | TFLOP/s |
+|---|---|---|---|---|
+| 1 | 64 | 1024 | 1 | 887.6 |
+| 2 | 16 | 256 | 2 | 835.7 |
+| 4 | 8 | 128 | 4 | 713.1 |
+
+Cutting code 4× costs 52 TFLOP/s and 8× costs 174, so the optimum is a **corner** — maximum
+expansion, minimum branches — and 16×16×64 already sits on it. Code is passive (63 of 64 arms are
+never fetched); a branch is active (every one executes).
+
+The index — three attempts, all negative:
+
+| attempt | TFLOP/s |
+|---|---|
+| naive: one shift/mask/or per flag | **887.6** |
+| `MIXFP4_PRMT_INDEX`: PRMT gather, fewer instructions | 878.1 |
+| `MIXFP4_PIPE_IX`: computed a k_block early | 844.9 |
+| `MIXFP4_FAKE_INDEX`: deleted entirely (probe, wrong numbers) | 985.1 |
+
+Deleting the whole index buys only ~97, and both attempts to *improve* it lose. The PRMT version
+trades six independent extractions for one serial chain — ILP beats instruction count here. The
+pipelined version wins +2 points on joint-K-A but loses 43 here, because that path's index fed a
+branch with nothing else to hide behind while this one is issue-bound.
+
+Scheduling and memory:
+
+| attempt | TFLOP/s |
+|---|---|
+| copies inside the arms (fixes `mio_throttle` 0.59 → 0.05) | 935.3 vs 907.2 outside |
+| barrier moved inside the first arm | 939.1 vs 935.3 |
+| without if-conversion poison | **655** — 128 of 448 OMMAs predicated |
+
+Instruction cache:
+
+| attempt | TFLOP/s |
+|---|---|
+| random tagging (arm changes every k_block) | 887.6 |
+| `MIXFP4_TAG=rowcol` (K-invariant, arm constant) | 961.9 |
+| `MIXFP4_TAG=none` (degenerate, one arm) | 962.5 |
+
+Worth 75 in total, and `rowcol` lands on top of `none` — a K-invariant layout collapses the
+working set to a single arm as completely as the degenerate case does.
+
+#### Why none of it can be hidden
+
+`ncu` on the 4×2 no-dispatch ceiling:
+
+```
+launch__registers_per_thread          168
+launch__block_size                    384      → 168 × 384 = 64,512 of 65,536
+launch__occupancy_limit_registers     1 block  → 1 CTA/SM
+sm__maximum_warps_per_active_cycle_pct  25%    → 3 warps per scheduler
+```
+
+Three warps per scheduler is not enough to cover a branch-resolution stall or a fetch bubble.
+Fitting two CTAs needs ≤85 registers per thread and the accumulators alone are 64 (2×8 atoms × 4),
+so occupancy cannot be raised. Whatever the dispatch adds — instructions or stalls — lands
+directly on the critical path.
+
+#### Conclusion
+
+16×16 spatial granularity needs **6 flag bits in every arrangement of 8 warps** (a warp's
+footprint is `CTA_M·CTA_N/8` = 2048 elements, so `warp_rows/16 + warp_cols/16` = 6 whether the
+warp tile is 32×64, 64×32 or 16×128). A finite K granule additionally forces in-loop
+re-selection. Six bits is affordable *only* when selected once per CTA (+5.8%); in-loop
+re-selection is affordable *only* at three bits (+4.9%). No configuration buys both, and
+16×16 at any finite K granule requires both.
+
+Note this supersedes the causal story in the next section: the ~90-cycle figure attributed there
+to a dispatch's *position* is really the first-branch penalty above, which is a property of the
+loop rather than of any individual dispatch.
+
+#### The frontier, for picking a configuration
+
+Measured at 4096³ against stock NVFP4, all correct:
+
+| granule (A rows × B cols × K) | bits | arms | in-loop | TFLOP/s | vs stock |
+|---|---|---|---|---|---|
+| 32 × 32 × 128 (shipped default) | 3 | 8 | 1×/k_tile | 1155.1 | **+4.6%** |
+| **16 rows × 128 cols, A at K=64** (`JOINT_KA`) | 3 | 8 | 1×/k_tile | 1150.7 | **+4.9%** |
+| 32 rows × 64 cols, B at K=64 (`JOINT_KB`) | 3 | 8 | 1×/k_tile | — | +5.0% |
+| **16 × 16, K-invariant** (`DISPATCH_PER_CTA`) | 6 | 64 | **none** | 1142.6 | **+5.8%** |
+| 16 rows × 64 cols, A at K=64 | 4 | 16 | 1×/k_tile | 1113.0 | +8.5% |
+| 64 × 64 × 64 (`JOINT_K`, coarse spatial) | 4 | 16 | 1×/k_tile | 1093.1 | +10.5% |
+| 16 × 128 × 64 both operands (`JOINT_K`) | 4 | 16 | 1×/k_tile | 1076.2 | +12.2% |
+| 16 × 32 × 128 | 6 | 64 | 1×/k_tile | 976.5 | +23.6% |
+| 16 × 16 × 128 | 6 | 64 | 2×/k_tile | 884.1 | +36.6% |
+| **16 × 16 × 64** | 6 | 64 | 2×/k_tile | 887.6 | **+35.9%** |
+
+Two readings worth carrying away. **K granularity is nearly free until it costs a bit**: 16×16×128
+and 16×16×64 are within noise of each other (884.1 vs 887.6), because coarsening K changes neither
+the bit count nor the branch placement. And **coarser is not always cheaper**: 64×64×64 is
+spatially four times coarser than 16×16 yet costs +10.5%, because both 64-row and 64-column
+granules already exceed a warp's 32×64 footprint and so save nothing, while the 64-element K
+granule doubles 2 bits into 4.
+
 ### Where the dispatch sits is worth ~90 cycles
 
 A dispatch placed *inside* the k_tile body costs about 90 cycles; one that encloses the whole
