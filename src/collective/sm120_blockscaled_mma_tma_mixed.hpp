@@ -1067,13 +1067,11 @@ struct CollectiveMma<
     // field layout. On the other paths the index would be fed to the blob verbatim and every arm
     // would be miscoded -- caught as unequal per-site OMMA counts ({0:96, 1:96, 2:32, 3:32}) by
     // the patcher, which is exactly what that invariant is for.
-    static_assert(defined_joint_kb_for_a_all_e2m1,
-                  "MIXFP4_A_ALL_E2M1 currently requires -DMIXFP4_JOINT_KB=1");
     constexpr int kADisp = 0;
 #else
     constexpr int kADisp = kAGran;
 #endif
-    constexpr int kBitsPerKBlock = kADisp + kBGran;
+    constexpr int kBitsPerKBlock = kADisp + kBDisp;
 
     // -DMIXFP4_JOINT_K=1: specialize the k_tile on *both* k_blocks' patterns at once, so the
     // format can change every 64 elements of K while the dispatch stays OUTSIDE the k_tile body.
@@ -1144,14 +1142,16 @@ struct CollectiveMma<
 
       // One bit per granule, read from that granule's first atom.
       uint32_t pattern = 0;
-      for_each(make_int_sequence<kAGran>{}, [&](auto gi) {
+      // A occupies kADisp bits of the INDEX -- zero when it is pinned to E2M1 -- while the blob's
+      // own A field keeps its kAGran width. gemm_kblock() converts between the two.
+      for_each(make_int_sequence<kADisp>{}, [&](auto gi) {
         constexpr int g = decltype(gi)::value;
         if ((sfa_words(_0{}, C<g * kAAtoms>{}) & MIXFP4_FLAG_MASK) != 0) { pattern |= 1u << g; }
       });
-      for_each(make_int_sequence<kBGran>{}, [&](auto gi) {
+      for_each(make_int_sequence<kBDisp>{}, [&](auto gi) {
         constexpr int g = decltype(gi)::value;
         if ((sfb_words(_0{}, C<g * kBAtoms>{}) & MIXFP4_FLAG_MASK) != 0) {
-          pattern |= 1u << (kAGran + g);
+          pattern |= 1u << (kADisp + g);
         }
       });
       uint32_t const site = pattern;
@@ -1341,7 +1341,10 @@ struct CollectiveMma<
       constexpr uint32_t kMine  = kAbits | (kBbits << kAGran);
       mixfp4::mma_kblock_blob<kMine>(
 #else
-      mixfp4::mma_kblock_blob<decltype(pattern_c)::value>(
+      constexpr uint32_t kIdxP_ = decltype(pattern_c)::value;
+      constexpr uint32_t kAbP_  = kIdxP_ & ((1u << kADisp) - 1);
+      constexpr uint32_t kBbP_  = (kIdxP_ >> kADisp) & ((1u << kBDisp) - 1);
+      mixfp4::mma_kblock_blob<kAbP_ | (kBbP_ << kAGran)>(
 #endif
           accum,
           recast<uint32_t>(tCrA(_,_,k_block)),
@@ -1349,7 +1352,12 @@ struct CollectiveMma<
           recast<uint32_t>(tCrSFA(_,_,k_block)),
           recast<uint32_t>(tCrSFB(_,_,k_block)));
 #else
-      constexpr uint32_t kPattern = decltype(pattern_c)::value;
+      // Same remap as the joint paths: the dispatch index packs A into kADisp bits, the blob and
+      // the per-atom site helpers expect kAGran. They differ whenever an operand is pinned.
+      constexpr uint32_t kIdx_ = decltype(pattern_c)::value;
+      constexpr uint32_t kAb_  = kIdx_ & ((1u << kADisp) - 1);
+      constexpr uint32_t kBb_  = (kIdx_ >> kADisp) & ((1u << kBDisp) - 1);
+      constexpr uint32_t kPattern = kAb_ | (kBb_ << kAGran);
       auto zipA = make_zip_tensor(tCrA(_,_,k_block), tCrSFA(_,_,k_block));
       auto zipB = make_zip_tensor(tCrB(_,_,k_block), tCrSFB(_,_,k_block));
 

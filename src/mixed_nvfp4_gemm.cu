@@ -170,6 +170,29 @@ using MixedTiledMma = decltype(cute::make_tiled_mma(
          typename StdMainloopBuilder::PermTileN,
          typename StdMainloopBuilder::PermTileK>{}));
 
+// The shared-memory copy atom's LDSM width is picked by the builder from the CTA tile's N
+// (<16 -> x1, <32 -> x2, else x4), NOT from how many columns a warp actually owns. At N=128 it
+// always chooses x4, and a warp tile narrower than 64 columns then has too few values per thread
+// for that atom -- "TiledCopy uses too few vals for selected CopyAtom", which is what rejects the
+// 2x4 and 1x8 warp arrangements.
+//
+// That is a selector default rather than a hardware limit, so it can be overridden. A narrower
+// warp tile is the only way to make an 8-column B granule cost few enough dispatch bits to be
+// affordable: bits = warp_columns/8, so 64 columns is 8 bits and 16 columns is 2.
+#ifndef MIXFP4_LDSM_B
+#define MIXFP4_LDSM_B 4
+#endif
+#if MIXFP4_LDSM_B == 1
+using MixedSmemCopyB = cute::SM75_U32x1_LDSM_N;
+#elif MIXFP4_LDSM_B == 2
+using MixedSmemCopyB = cute::SM75_U32x2_LDSM_N;
+#else
+using MixedSmemCopyB = cute::SM75_U32x4_LDSM_N;
+#endif
+using MixedSmemCopyAtomsB = decltype(cute::make_tuple(
+    cutlass::Copy_Atom<MixedSmemCopyB, typename StdMainloopBuilder::SmemAllocTypeB>{},
+    cute::get<1>(typename StdMainloopBuilder::SmemCopyAtomsB{})));
+
 using CollectiveMainloop = cutlass::gemm::collective::CollectiveMma<
     MixedDispatchPolicy,
     ThreadBlockShape,
@@ -184,7 +207,7 @@ using CollectiveMainloop = cutlass::gemm::collective::CollectiveMma<
     cute::identity,
     typename StdMainloopBuilder::GmemTiledCopyPairB,
     typename StdMainloopBuilder::SmemLayoutAtomsB,
-    typename StdMainloopBuilder::SmemCopyAtomsB,
+    MixedSmemCopyAtomsB,
     cute::identity>;
 
 using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
