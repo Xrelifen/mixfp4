@@ -646,6 +646,27 @@ Measured at 4096³ against stock NVFP4, all correct:
 
 #### Pinning one operand to E2M1
 
+This is the cheapest thing in the report, and it makes the original goal -- a format granule the
+size of one `mma.sync`'s operand footprint -- essentially free.
+
+The dispatch cost is set by the bit count, and a pure operand contributes none. Pin **B** to E2M1
+and give A the 8x1 arrangement, where a warp owns a single m-atom, and A at its 16-row floor with a
+64-element K granule is `2 x 1 = 2` bits -- **four arms, 256 OMMAs**:
+
+| shape | stock | A 16 rows x 64 K, B pure E2M1 | overhead |
+|---|---|---|---|
+| 4096³ | 1208.0 | 1200.8 | **+0.59%** |
+| 8192x8192x2048 | 1258.3 | 1253.6 | **+0.37%** |
+| 4096x4096x8192 | 1273.8 | 1260.7 | **+1.04%** |
+| 2048³ | 796.6 | 805.0 | **−1.04%** |
+
+Against the 8x1 no-dispatch ceiling of 1201.8 the dispatch costs **0.2%**. The 2048³ row is not a
+measurement artefact: the 8x1 arrangement with a 128x32 epilogue tile genuinely beats the builder's
+4x2 at that shape, so the mixed kernel outruns stock NVFP4 there.
+
+`MIXFP4_B_ALL_E2M1=1` with `MIXFP4_TAG=randa`; the mirror is `MIXFP4_A_ALL_E2M1` with `randb`.
+
+
 If A is E2M1 everywhere, it contributes no dispatch bits and the whole budget goes to B. This is
 the cheapest mixed-format configuration measured anywhere in this work:
 

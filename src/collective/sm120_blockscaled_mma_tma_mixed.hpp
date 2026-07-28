@@ -1039,6 +1039,12 @@ struct CollectiveMma<
     constexpr bool defined_joint_kb_for_a_all_e2m1 = false;
 #endif
     (void) defined_joint_kb_for_a_all_e2m1;
+#if defined(MIXFP4_JOINT_KA) && MIXFP4_JOINT_KA
+    constexpr bool defined_joint_ka_for_b_all_e2m1 = true;
+#else
+    constexpr bool defined_joint_ka_for_b_all_e2m1 = false;
+#endif
+    (void) defined_joint_ka_for_b_all_e2m1;
 
     // -DMIXFP4_A_ALL_E2M1=1: A is E2M1 everywhere, so it contributes NO dispatch bits and the
     // whole budget goes to B. Leaving A's flag in the index and merely never setting it is not
@@ -1046,6 +1052,16 @@ struct CollectiveMma<
     // 1064.0 against 1055.6 for genuinely-mixed A, i.e. almost nothing. kADisp is the number of
     // bits A occupies in the dispatch INDEX; kAGran stays the blob's own A field width, since the
     // generated blob still encodes an (always-zero) A flag in its low bits.
+// -DMIXFP4_B_ALL_E2M1=1 is the mirror: B is E2M1 everywhere and the budget goes to A. With the
+// 8x1 arrangement a warp owns one m-atom, so A at its 16-row floor is 1 bit, 2 jointly for a
+// 64-element K granule -- four arms.
+#if defined(MIXFP4_B_ALL_E2M1) && MIXFP4_B_ALL_E2M1
+    static_assert(defined_joint_ka_for_b_all_e2m1,
+                  "MIXFP4_B_ALL_E2M1 currently requires -DMIXFP4_JOINT_KA=1");
+    constexpr int kBDisp = 0;
+#else
+    constexpr int kBDisp = kBGran;
+#endif
 #if defined(MIXFP4_A_ALL_E2M1) && MIXFP4_A_ALL_E2M1
     // Only the joint-K-B path remaps the A-less index back into the blob's (A low, B above)
     // field layout. On the other paths the index would be fed to the blob verbatim and every arm
@@ -1088,7 +1104,7 @@ struct CollectiveMma<
     // Mirror of joint-K-B: A gets the 64-element K granule, B keeps the k_tile's 128. This is the
     // configuration that delivers a 16 row x 64 K format block -- one mma.sync's A footprint --
     // while leaving the branch outside the k_tile body where it costs cycles rather than stalls.
-    constexpr int kNumArms  = 1 << (2 * kAGran + kBGran);
+    constexpr int kNumArms  = 1 << (2 * kAGran + kBDisp);
     static_assert(K_BLOCK_MAX == 2, "joint-K-A specialization assumes two k_blocks per k_tile");
     // -DMIXFP4_ALLOW_OUTLINE=1 lifts the cap, which is what pricing the arm-count curve past 32
     // requires: 64 arms with a single per-k_tile dispatch is the cheapest branch placement there
@@ -1321,7 +1337,7 @@ struct CollectiveMma<
       constexpr uint32_t kJoint = decltype(pattern_c)::value;
       constexpr uint32_t kAbits =
           (kJoint >> (decltype(k_block)::value * kAGran)) & ((1u << kAGran) - 1);
-      constexpr uint32_t kBbits = (kJoint >> (2 * kAGran)) & ((1u << kBGran) - 1);
+      constexpr uint32_t kBbits = (kJoint >> (2 * kAGran)) & ((1u << kBDisp) - 1);
       constexpr uint32_t kMine  = kAbits | (kBbits << kAGran);
       mixfp4::mma_kblock_blob<kMine>(
 #else
@@ -1440,7 +1456,7 @@ struct CollectiveMma<
       // read; the rest is already in the register fragment.
       mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(
           read_a_reg(_0{}) | (read_a_smem(_1{}) << kAGran)
-                           | (read_b_reg(_0{}) << (2 * kAGran)), body);
+                           | ((kBDisp ? read_b_reg(_0{}) : 0u) << (2 * kAGran)), body);
 #else
       mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(read_site(_0{}), body);
 #endif
@@ -1599,7 +1615,7 @@ struct CollectiveMma<
     auto next_pattern = [&] {
 #if defined(MIXFP4_JOINT_KA) && MIXFP4_JOINT_KA
       return read_a_reg(_0{}) | (read_a_smem(_1{}) << kAGran)
-                              | (read_b_reg(_0{}) << (2 * kAGran));
+                              | ((kBDisp ? read_b_reg(_0{}) : 0u) << (2 * kAGran));
 #else   // joint-K-B: A once per k_tile (or absent), B once per k_block
       return (kADisp ? read_a_reg(_0{}) : 0u) | (read_b_reg(_0{}) << kADisp)
                                               | (read_b_smem(_1{}) << (kADisp + kBGran));
