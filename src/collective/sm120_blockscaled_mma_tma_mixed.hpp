@@ -1606,6 +1606,26 @@ struct CollectiveMma<
 
     // The last body already computed the tail's arm.
     mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(pattern_cur, k_tile_tail_body);
+#elif defined(MIXFP4_DISPATCH_PER_CTA) && MIXFP4_DISPATCH_PER_CTA
+    // ---------------------------------------------------------------------------------------
+    // ONE dispatch for the whole CTA: the entire k-loop lives inside each arm.
+    // ---------------------------------------------------------------------------------------
+    // Correct only when the format is K-INVARIANT -- the flags are read once, before the loop, and
+    // applied to every k_tile. That is exactly what a per-channel format choice, or any sorted
+    // layout, produces (MIXFP4_TAG=rowcol models it).
+    //
+    // The payoff is that both costs vanish at once. There is no branch in the k-loop, so nothing
+    // interrupts the OMMA stream; and although the binary still holds every arm, a CTA executes
+    // ONE of them for its entire life, so the instruction-cache working set is a single k_tile
+    // body rather than the whole jump table. MIXFP4_TAG=rowcol already showed that second effect
+    // is worth +74 TFLOP/s on its own at 64 arms.
+    mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(read_site(_0{}), [&](auto site_c) {
+      CUTLASS_PRAGMA_NO_UNROLL
+      for ( ; k_tile_count > 1; --k_tile_count) {
+        k_tile_body(site_c);
+      }
+      k_tile_tail_body(site_c);
+    });
 #else
     CUTLASS_PRAGMA_NO_UNROLL
     for ( ; k_tile_count > 1; --k_tile_count) {

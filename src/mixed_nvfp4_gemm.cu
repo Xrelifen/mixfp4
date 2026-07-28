@@ -352,13 +352,18 @@ std::vector<int> build_granule_map(int atoms_per_granule) {
   return mn_to_granule;
 }
 
-enum class TagMode { kNone, kRandom, kAllA, kAllB, kAll };
+enum class TagMode { kNone, kRandom, kRowCol, kAllA, kAllB, kAll };
 
 static TagMode parse_tag_mode() {
   const char *e = std::getenv("MIXFP4_TAG");
   if (e == nullptr) { return TagMode::kRandom; }
   std::string s{e};
   if (s == "none" || s == "0") { return TagMode::kNone; }
+  // Random per row/column granule but CONSTANT along K -- what a per-channel format
+  // choice, or a sorted layout, actually produces. Every warp then takes the same arm
+  // for its whole k-loop, so the instruction-cache working set is one arm instead of
+  // the whole jump table, while the dispatch still runs and still varies across warps.
+  if (s == "rowcol")           { return TagMode::kRowCol; }
   if (s == "a")                { return TagMode::kAllA; }
   if (s == "b")                { return TagMode::kAllB; }
   if (s == "all")              { return TagMode::kAll; }
@@ -368,6 +373,7 @@ static TagMode parse_tag_mode() {
 static const char *tag_mode_name(TagMode t) {
   switch (t) {
     case TagMode::kNone:   return "none (all E2M1 -- site 0 only)";
+    case TagMode::kRowCol: return "random per row/col granule, constant along K";
     case TagMode::kAllA:   return "all-A (E0M3 x E2M1 -- site 1 only)";
     case TagMode::kAllB:   return "all-B (E2M1 x E0M3 -- site 2 only)";
     case TagMode::kAll:    return "all (E0M3 x E0M3 -- site 3 only)";
@@ -452,7 +458,7 @@ int run(int m, int n, int k, int warmup_iters, int bench_iters) {
     // (accounting for the TiledMma's N permutation). Two rows/columns in the same granule of the
     // same tile and the same k_tile must always get the same flag.
     auto tag = [](auto tensor, int mn_extent, int k_extent, std::vector<int> const &granule_map,
-                  int k_granule, uint64_t seed, bool force) {
+                  int k_granule, uint64_t seed, bool force, bool k_invariant) {
       int const tile_mn = int(granule_map.size());
       for (int mn = 0; mn < mn_extent; ++mn) {
         int const granule_id =
@@ -463,8 +469,10 @@ int run(int m, int n, int k, int warmup_iters, int bench_iters) {
             uint64_t h = seed;
             h = h * 6364136223846793005ull + uint64_t(granule_id) + 1;
             h ^= h >> 29;
-            h = h * 6364136223846793005ull + uint64_t(kk / k_granule) + 1;
-            h ^= h >> 29;
+            if (!k_invariant) {
+              h = h * 6364136223846793005ull + uint64_t(kk / k_granule) + 1;
+              h ^= h >> 29;
+            }
             set = (h & 1ull) != 0;
           }
           if (set) { tensor(mn, kk, 0).raw() |= 0x80; }
@@ -475,17 +483,18 @@ int run(int m, int n, int k, int warmup_iters, int bench_iters) {
         build_granule_map<true>(MIXFP4_A_ATOMS_PER_GRANULE);
     std::vector<int> const b_granule_map =
         build_granule_map<false>(MIXFP4_B_ATOMS_PER_GRANULE);
-    bool const rand_a  = (tag_mode == TagMode::kRandom);
-    bool const rand_b  = (tag_mode == TagMode::kRandom);
+    bool const rand_a  = (tag_mode == TagMode::kRandom || tag_mode == TagMode::kRowCol);
+    bool const rand_b  = (tag_mode == TagMode::kRandom || tag_mode == TagMode::kRowCol);
+    bool const kinv    = (tag_mode == TagMode::kRowCol);
     bool const force_a = (tag_mode == TagMode::kAllA || tag_mode == TagMode::kAll);
     bool const force_b = (tag_mode == TagMode::kAllB || tag_mode == TagMode::kAll);
     if (rand_a || force_a) {
       tag(make_tensor(block_sfa.host_data(), layout_sfa), m, k, a_granule_map, kKGranuleA,
-          0x9e3779b97f4a7c15ull, force_a);
+          0x9e3779b97f4a7c15ull, force_a, kinv);
     }
     if (rand_b || force_b) {
       tag(make_tensor(block_sfb.host_data(), layout_sfb), n, k, b_granule_map, kKGranuleB,
-          0xbf58476d1ce4e5b9ull, force_b);
+          0xbf58476d1ce4e5b9ull, force_b, kinv);
     }
   }
   if (std::getenv("MIXFP4_PRINT_MAP") != nullptr) {
@@ -501,9 +510,19 @@ int run(int m, int n, int k, int warmup_iters, int bench_iters) {
     show("B col map", build_granule_map<false>(MIXFP4_B_ATOMS_PER_GRANULE));
     return 0;
   }
+#if defined(MIXFP4_DISPATCH_PER_CTA) && MIXFP4_DISPATCH_PER_CTA
+  // This mode reads the format ONCE per CTA, so its K granule is the whole K extent, not the
+  // k_tile the macros describe. Report the real contract: tagging that varies along K is silently
+  // wrong here, verified at 0.60 relative error.
+  (void) kKGranuleA; (void) kKGranuleB;
+  std::cout << "Format tagging: " << tag_mode_name(tag_mode)
+            << "; granule = " << kAGranuleRows << " rows of A x ALL K"
+            << ", " << kBGranuleCols << " cols of B x ALL K  [K-INVARIANT REQUIRED]" << std::endl;
+#else
   std::cout << "Format tagging: " << tag_mode_name(tag_mode)
             << "; granule = " << kAGranuleRows << " rows of A x " << kKGranuleA << " K"
             << ", " << kBGranuleCols << " cols of B x " << kKGranuleB << " K" << std::endl;
+#endif
 
   block_a.sync_device();
   block_b.sync_device();
