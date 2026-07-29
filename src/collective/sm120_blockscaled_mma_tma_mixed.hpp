@@ -159,6 +159,22 @@ using namespace cute;
 #endif
 #endif
 
+// TIMING PROBE ONLY -- computes wrong numbers by construction.
+//
+// Replaces the dispatch index with a warp-uniform value derived from the LOOP COUNTER, costing
+// about one instruction. The flag reads are gone but the branch still executes every k_tile and
+// still cannot be hoisted.
+//
+// The counter matters. A loop-INVARIANT index (blockIdx) lets ptxas unswitch the loop -- hoist the
+// branch out and put the k-loop inside each arm -- and the probe then measures the per-CTA
+// structure instead of an in-loop branch. That showed up as 1211.9 TFLOP/s against a 1191.0
+// no-dispatch ceiling, i.e. faster than having no branch at all, which is the tell.
+#if defined(MIXFP4_FAKE_INDEX) && MIXFP4_FAKE_INDEX
+#define MIXFP4_IX(expr, narms) (uint32_t(k_tile_count) & uint32_t((narms) - 1))
+#else
+#define MIXFP4_IX(expr, narms) (expr)
+#endif
+
 namespace mixfp4_detail {
 
 // Compile-time dispatch on a runtime pattern index, as a balanced binary search so the cost is
@@ -1456,9 +1472,10 @@ struct CollectiveMma<
       // registers at dispatch time. Reading them back from shared memory put an LDS on the
       // branch's critical path for nothing -- the same fix that was worth ~20 TFLOP/s on
       // joint-K-A.
-      mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(
+      mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(MIXFP4_IX(
           (kADisp ? read_a_reg(_0{}) : 0u) | (read_b_reg(_0{}) << kADisp)
-                                           | (read_b_smem(_1{}) << (kADisp + kBGran)), body);
+                                           | (read_b_smem(_1{}) << (kADisp + kBGran)),
+          kNumArms), body);
 #elif defined(MIXFP4_JOINT_KA) && MIXFP4_JOINT_KA
       // A's flags once per k_block, B's once for the whole k_tile. Only k_block 1 needs the smem
       // read; the rest is already in the register fragment.
@@ -1466,7 +1483,7 @@ struct CollectiveMma<
           read_a_reg(_0{}) | (read_a_smem(_1{}) << kAGran)
                            | ((kBDisp ? read_b_reg(_0{}) : 0u) << (2 * kAGran)), body);
 #else
-      mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(read_site(_0{}), body);
+      mixfp4_detail::dispatch_pattern<0, kNumArms - 1>(MIXFP4_IX(read_site(_0{}), kNumArms), body);
 #endif
     };
 
