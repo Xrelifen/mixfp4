@@ -1,0 +1,12 @@
+model,revision,method,calibration_seed,wikitext_ppl,c4_ppl,downstream_macro,native,status,blocking_reason
+Qwen3-8B,,A0-BF16,NOT_RUN,,,,false,NOT_RUN,ISA gate not reached
+Qwen3-8B,,A1-Stock-NVFP4,NOT_RUN,,,,false,NOT_RUN,ISA gate not reached
+Qwen3-8B,,A2-FourOverSix,NOT_RUN,,,,false,NOT_RUN,ISA gate not reached
+Qwen3-8B,,A3-Fixed-E0M3,NOT_RUN,,,,false,NOT_RUN,ISA gate not reached
+Qwen3-8B,,A4-Ideal-IF4,NOT_RUN,,,,false,NOT_RUN,ISA gate not reached
+Qwen3-8B,,A5-Ideal-MixFP4,NOT_RUN,,,,false,NOT_RUN,ISA gate not reached
+Qwen3-8B,,A6-HardwareFeasible-NativeMix-Simulation,NOT_RUN,,,,false,NOT_RUN,ISA gate not reached
+Qwen3-8B,,A7-NativeMix-Native-Kernel,NOT_RUN,,,,true,NOT_RUN,SM120 GPU unavailable
+Qwen3-8B,,A8-SoftwareDecode-Mixed,NOT_RUN,,,,false,NOT_RUN,Utility phase not entered
+Qwen3-8B,,A9-HardwareCostAware-NativeMix,NOT_RUN,,,,true,NOT_RUN,SM120 GPU unavailable
+Qwen3-8B,,A10-HardwareBlockOracle,NOT_RUN,,,,false,NOT_RUN,Hardware block granularity unknown

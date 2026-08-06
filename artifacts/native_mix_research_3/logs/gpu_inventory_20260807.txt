@@ -1,0 +1,17 @@
+audit_time=2026-08-07T04:49:03+08:00
+command=nvidia-smi --query-gpu=index,name,uuid,pci.bus_id,driver_version,compute_cap,memory.total,temperature.gpu,power.draw,clocks.current.graphics,clocks.current.memory --format=csv
+index,name,uuid,pci.bus_id,driver_version,compute_cap,memory.total_MiB,temperature_C,power_W,graphics_clock_MHz,memory_clock_MHz
+0,NVIDIA RTX A6000,GPU-67caadd3-59e5-2117-21bd-39c034a97827,00000000:01:00.0,565.57.01,8.6,49140,39,26.75,210,810
+1,NVIDIA RTX A6000,GPU-2e6984d6-fde8-3ed3-2f83-14ec2228a8b9,00000000:24:00.0,565.57.01,8.6,49140,38,28.10,870,810
+2,NVIDIA RTX A6000,GPU-9cec7336-5b30-3f86-35e7-06919156e7da,00000000:41:00.0,565.57.01,8.6,49140,78,214.31,1860,8001
+3,NVIDIA RTX A6000,GPU-d0ab9929-0ef6-d612-0cb5-718f4fdd6c24,00000000:61:00.0,565.57.01,8.6,49140,35,25.99,210,405
+4,NVIDIA RTX 6000 Ada Generation,GPU-fe92aad0-2961-8dbc-34d0-835dba30da1d,00000000:81:00.0,565.57.01,8.9,49140,42,24.22,210,405
+5,NVIDIA RTX 6000 Ada Generation,GPU-702a9c40-324b-4579-bbfb-167991ba5acb,00000000:A1:00.0,565.57.01,8.9,49140,39,42.09,255,405
+6,NVIDIA RTX 6000 Ada Generation,GPU-96caba73-e173-0862-61d4-b11784bf6ca4,00000000:C1:00.0,565.57.01,8.9,49140,39,26.29,210,405
+
+command=nvidia-smi --query-compute-apps=pid,process_name,used_memory,gpu_uuid --format=csv
+pid,process_name,used_memory_MiB,gpu_uuid,owner,action
+2430480,python,16582,GPU-9cec7336-5b30-3f86-35e7-06919156e7da,sts_l,observed_only_not_interfered
+
+sm120_device_count=0
+gpu_jobs_launched=0

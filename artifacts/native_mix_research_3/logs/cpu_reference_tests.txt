@@ -1,0 +1,7 @@
+command=python -m unittest discover -s experiments/native_mix_research_3 -p test_*.py -v
+tests_run=8
+failures=0
+errors=0
+status=PASS_CPU_ONLY
+native_isa_status=NOT_RUN
+native_isa_blocking_reason=SM120 GPU unavailable

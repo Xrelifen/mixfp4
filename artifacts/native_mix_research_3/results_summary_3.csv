@@ -1,0 +1,22 @@
+record_type,phase,model,method,metric,value,unit,status,evidence_level,blocking_reason
+availability,0,host,device_inventory,sm120_device_count,0,count,FAIL,DIRECT,SM120 GPU unavailable
+cpu_reference,1,cpu,E2M1,decoded_nibbles,16,count,PASS,CPU_ONLY,
+cpu_reference,1,cpu,candidate_E0M3,decoded_nibbles,16,count,PASS,CPU_HYPOTHESIS_ONLY,
+cpu_reference,1,cpu,mixed_operand_truth_table,rows,1024,count,PASS,CPU_EXPECTED_ONLY,
+isa_gate,1,sm120,all_modes,bit_exact,,,INCOMPLETE,NOT_RUN,SM120 GPU unavailable
+legacy_recompute,0,RTX5090,k_tile_dispatch,minimum_throughput_loss,1.012983,percent,UNVERIFIED,AGGREGATE_REPORT_ONLY,Raw logs absent
+legacy_recompute,0,RTX5090,k_tile_dispatch,maximum_throughput_loss,4.943963,percent,UNVERIFIED,AGGREGATE_REPORT_ONLY,Raw logs absent
+legacy_recompute,0,RTX5090,one_sided_A_adaptive,latency_equivalent_overhead,0.599600,percent,UNVERIFIED,AGGREGATE_REPORT_ONLY,Raw logs absent
+legacy_recompute,0,RTX5090,one_sided_B_adaptive,latency_equivalent_overhead,2.592435,percent,UNVERIFIED,AGGREGATE_REPORT_ONLY,Raw logs absent
+legacy_recompute,0,RTX5090,two_sided_fine,latency_equivalent_overhead,35.849482,percent,UNVERIFIED,AGGREGATE_REPORT_ONLY,Raw logs absent
+legacy_recompute,0,RTX5090,per_mma_bad,throughput_before,1207,TFLOP/s,UNVERIFIED,AGGREGATE_REPORT_ONLY,Raw logs absent
+legacy_recompute,0,RTX5090,per_mma_bad,throughput_after,504,TFLOP/s,UNVERIFIED,AGGREGATE_REPORT_ONLY,Raw logs absent
+kernel_gate,4,Qwen3-8B,K2,median_overhead,,,NOT_RUN,NONE,SM120 GPU unavailable
+kernel_gate,4,Qwen3-8B,K2,p95_overhead,,,NOT_RUN,NONE,SM120 GPU unavailable
+accuracy,6,Qwen3-8B,NativeMix,WikiText_PPL,,,NOT_RUN,NONE,ISA gate not reached
+accuracy,6,Qwen3-8B,NativeMix,C4_PPL,,,NOT_RUN,NONE,ISA gate not reached
+accuracy,7,Llama-3.1-8B,NativeMix,WikiText_PPL,,,NOT_RUN,NONE,ISA gate not reached
+accuracy,7,Llama-3.1-8B,NativeMix,C4_PPL,,,NOT_RUN,NONE,ISA gate not reached
+end_to_end,8,both,NativeMix,tokens_per_second,,,NOT_RUN,NONE,SM120 GPU unavailable
+end_to_end,8,both,NativeMix,TTFT,,,NOT_RUN,NONE,SM120 GPU unavailable
+end_to_end,8,both,NativeMix,TPOT,,,NOT_RUN,NONE,SM120 GPU unavailable

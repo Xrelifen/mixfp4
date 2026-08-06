@@ -1,0 +1,5 @@
+model,corpus,ideal_per16_metric,hardware_feasible_metric,absolute_gap,relative_gap_percent,status,blocking_reason
+Qwen3-8B,WikiText-2,,,,,NOT_RUN,Hardware granularity not characterized
+Qwen3-8B,C4,,,,,NOT_RUN,Hardware granularity not characterized
+Llama-3.1-8B,WikiText-2,,,,,NOT_RUN,Hardware granularity not characterized
+Llama-3.1-8B,C4,,,,,NOT_RUN,Hardware granularity not characterized

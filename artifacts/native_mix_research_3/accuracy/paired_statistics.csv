@@ -1,0 +1,5 @@
+model,metric,comparison,n_pairs,mean_delta,sd,ci95_low,ci95_high,bootstrap_repetitions,status,blocking_reason
+Qwen3-8B,WikiText-PPL,NativeMix-vs-FourOverSix,0,,,,,0,NOT_RUN,SM120 GPU unavailable
+Qwen3-8B,C4-PPL,NativeMix-vs-FourOverSix,0,,,,,0,NOT_RUN,SM120 GPU unavailable
+Llama-3.1-8B,WikiText-PPL,NativeMix-vs-FourOverSix,0,,,,,0,NOT_RUN,SM120 GPU unavailable
+Llama-3.1-8B,C4-PPL,NativeMix-vs-FourOverSix,0,,,,,0,NOT_RUN,SM120 GPU unavailable

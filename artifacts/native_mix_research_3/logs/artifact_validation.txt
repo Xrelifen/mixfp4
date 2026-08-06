@@ -1,0 +1,12 @@
+validation_time=2026-08-07T04:49:03+08:00
+required_entries=52
+missing_entries=0
+json_files=10
+json_parse_errors=0
+csv_files=26
+csv_nonempty_row_width_errors=0
+mixed_operand_truth_table_rows=1024
+cpu_unit_tests=8
+cpu_unit_test_failures=0
+native_gpu_runs=0
+decision=INCOMPLETE

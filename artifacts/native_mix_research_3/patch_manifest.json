@@ -1,0 +1,16 @@
+{
+  "status": "NOT_RUN",
+  "reason": "ISA gate unavailable because SM120 GPU is absent",
+  "public_api_supported": false,
+  "patcher_audited_from": "HEAD:scripts/patch_mixed_nvfp4_gemm.py",
+  "patcher_input_commit": "ce62564a8d271343fbec4f7ed8452f1748faed1d",
+  "original_sha256": null,
+  "patched_sha256": null,
+  "expected_patch_count": null,
+  "actual_patch_count": null,
+  "driver_cuda_allowlist_match": null,
+  "runtime_canary": "NOT_RUN",
+  "restore_test": "NOT_RUN",
+  "before_disassembly": null,
+  "after_disassembly": null
+}

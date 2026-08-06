@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "status": "AUDIT_ONLY_UNVERIFIED",
+  "public_api_supported": false,
+  "entries": [],
+  "legacy_hypothesis": {
+    "encoding_word": 2,
+    "format_bit_offset": 14,
+    "format_bit_width": 2,
+    "site_map": {
+      "0": "E2M1xE2M1",
+      "1": "candidate-E0M3xE2M1",
+      "2": "E2M1xcandidate-E0M3",
+      "3": "candidate-E0M3xcandidate-E0M3"
+    },
+    "prmt_selectors": ["0x3210", "0x3214", "0x3254", "0x3654"],
+    "formal_status": "UNVERIFIED"
+  },
+  "reason_no_allowlisted_entries": "No Research 3 SM120 build/disassembly/canary was possible"
+}

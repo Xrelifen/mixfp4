@@ -1,0 +1,10 @@
+{
+  "status": "NOT_RUN",
+  "selection_frozen": false,
+  "reason": "Model phase not entered because the mandatory ISA gate could not run",
+  "models": [
+    {"model_id": "Qwen/Qwen3-8B", "revision": null, "checkpoint_hash": null, "tokenizer_hash": null, "cache_available": false},
+    {"model_id": "meta-llama/Llama-3.1-8B", "revision": null, "checkpoint_hash": null, "tokenizer_hash": null, "cache_available": false}
+  ],
+  "blocking_issue": "SM120 GPU unavailable"
+}
