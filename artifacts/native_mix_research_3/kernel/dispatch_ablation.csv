@@ -1,6 +1,0 @@
-kernel,dispatch_scope,mechanism,median_overhead_percent,p95_overhead_percent,status,blocking_reason
-K2,k_tile,jump_table,,,NOT_RUN,SM120 GPU unavailable
-K3,cta,jump_table,,,NOT_RUN,SM120 GPU unavailable
-K6,mma,branch_bad_baseline,,,NOT_RUN,SM120 GPU unavailable
-K8,split_launch,split_gemm,,,NOT_RUN,ISA gate not reached
-K9,offline_reorder,reorder_then_gemm,,,NOT_RUN,ISA gate not reached

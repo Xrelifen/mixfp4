@@ -1,3 +1,0 @@
-device_index,gpu_sku,uuid,pci_id,vbios,driver,cuda,nvcc,cutlass_commit,kernel_hash,patch_offsets,canary,correctness,throughput_tflops,status,blocking_reason
-NOT_RUN,SM120 device 1,,,,,,,,,,,,,NOT_RUN,SM120 GPU unavailable
-NOT_RUN,SM120 device 2,,,,,,,,,,,,,NOT_RUN,SM120 GPU unavailable

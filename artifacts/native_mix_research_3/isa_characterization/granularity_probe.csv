@@ -1,7 +1,0 @@
-probe_scope,requested_pattern,status,smallest_confirmed_scope,blocking_reason
-scale_group,adjacent_16_value_groups_different_format,NOT_RUN,,SM120 GPU unavailable
-k_fragment,adjacent_fragments_different_format,NOT_RUN,,SM120 GPU unavailable
-mma,adjacent_mma_operands_different_format,NOT_RUN,,SM120 GPU unavailable
-k_tile,adjacent_k_tiles_different_format,NOT_RUN,,SM120 GPU unavailable
-cta,adjacent_ctas_different_format,NOT_RUN,,SM120 GPU unavailable
-whole_kernel,fixed_format,NOT_RUN,,SM120 GPU unavailable

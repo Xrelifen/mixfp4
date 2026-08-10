@@ -1,3 +1,0 @@
-model,kernel,weighted_median_overhead_percent,weighted_p95_overhead_percent,correctness_failures,status,blocking_reason
-Qwen3-8B,K2,,,,NOT_RUN,SM120 GPU unavailable
-Llama-3.1-8B,K2,,,,NOT_RUN,SM120 GPU unavailable

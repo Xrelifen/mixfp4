@@ -1,9 +1,0 @@
-mode,chain_type,metric,repetitions,value,unit,status,blocking_reason
-E2M1xE2M1,dependency,latency,NOT_RUN,,cycles,NOT_RUN,SM120 GPU unavailable
-E0M3xE2M1,dependency,latency,NOT_RUN,,cycles,NOT_RUN,SM120 GPU unavailable
-E2M1xE0M3,dependency,latency,NOT_RUN,,cycles,NOT_RUN,SM120 GPU unavailable
-E0M3xE0M3,dependency,latency,NOT_RUN,,cycles,NOT_RUN,SM120 GPU unavailable
-E2M1xE2M1,independent,reciprocal_throughput,NOT_RUN,,cycles,NOT_RUN,SM120 GPU unavailable
-E0M3xE2M1,independent,reciprocal_throughput,NOT_RUN,,cycles,NOT_RUN,SM120 GPU unavailable
-predicated_off,predicated,predicated_off_cost,NOT_RUN,,cycles,NOT_RUN,SM120 GPU unavailable
-mixed_arms,independent,active_arm_scaling,NOT_RUN,,ratio,NOT_RUN,SM120 GPU unavailable

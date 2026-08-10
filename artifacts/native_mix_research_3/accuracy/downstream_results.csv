@@ -1,9 +1,0 @@
-model,task,method,calibration_seed,score,paired_delta,status,blocking_reason
-Qwen3-8B,HellaSwag,NativeMix,NOT_RUN,,,NOT_RUN,ISA gate not reached
-Qwen3-8B,PIQA,NativeMix,NOT_RUN,,,NOT_RUN,ISA gate not reached
-Qwen3-8B,ARC-Easy,NativeMix,NOT_RUN,,,NOT_RUN,ISA gate not reached
-Qwen3-8B,ARC-Challenge,NativeMix,NOT_RUN,,,NOT_RUN,ISA gate not reached
-Qwen3-8B,WinoGrande,NativeMix,NOT_RUN,,,NOT_RUN,ISA gate not reached
-Qwen3-8B,BoolQ,NativeMix,NOT_RUN,,,NOT_RUN,ISA gate not reached
-Qwen3-8B,MMLU,NativeMix,NOT_RUN,,,NOT_RUN,ISA gate not reached
-Llama-3.1-8B,all_required,NativeMix,NOT_RUN,,,NOT_RUN,ISA gate not reached

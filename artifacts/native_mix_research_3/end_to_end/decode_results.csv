@@ -1,3 +1,0 @@
-model,batch,input_length,generated_tokens,method,repetition,tokens_per_second,tpot_ms,p50_ms,p95_ms,peak_memory_mib,energy_per_token_j,status,blocking_reason
-Qwen3-8B,NOT_RUN,NOT_RUN,NOT_RUN,NativeMix,NOT_RUN,,,,,,,NOT_RUN,SM120 GPU unavailable
-Llama-3.1-8B,NOT_RUN,NOT_RUN,NOT_RUN,NativeMix,NOT_RUN,,,,,,,NOT_RUN,SM120 GPU unavailable

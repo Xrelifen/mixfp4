@@ -1,3 +1,0 @@
-model,shape,batch,sequence,kernel,cuda_graph,repetition,latency_us,tflops,temperature_c,power_w,status,blocking_reason
-NOT_RUN,NOT_RUN,NOT_RUN,NOT_RUN,K0,NOT_RUN,NOT_RUN,,,,,NOT_RUN,SM120 GPU unavailable
-NOT_RUN,NOT_RUN,NOT_RUN,NOT_RUN,K2,NOT_RUN,NOT_RUN,,,,,NOT_RUN,SM120 GPU unavailable

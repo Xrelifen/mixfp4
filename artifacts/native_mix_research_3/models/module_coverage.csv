@@ -1,3 +1,0 @@
-model,revision,eligible_linear_flops,native_mixed_flops,stock_fallback_flops,bf16_fallback_flops,coverage_percent,status,blocking_reason
-Qwen3-8B,,,,,,,NOT_RUN,SM120 GPU unavailable
-Llama-3.1-8B,,,,,,,NOT_RUN,SM120 GPU unavailable

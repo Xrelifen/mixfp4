@@ -1,5 +1,0 @@
-model,corpus,method,calibration_seed,ppl,mean,sd,ci95_low,ci95_high,status,blocking_reason
-Qwen3-8B,WikiText-2,NativeMix,NOT_RUN,,,,,,NOT_RUN,SM120 GPU unavailable
-Qwen3-8B,C4,NativeMix,NOT_RUN,,,,,,NOT_RUN,SM120 GPU unavailable
-Llama-3.1-8B,WikiText-2,NativeMix,NOT_RUN,,,,,,NOT_RUN,SM120 GPU unavailable
-Llama-3.1-8B,C4,NativeMix,NOT_RUN,,,,,,NOT_RUN,SM120 GPU unavailable

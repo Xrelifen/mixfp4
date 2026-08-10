@@ -1,7 +1,0 @@
-kernel,case,status,max_abs_error,relative_error,blocking_reason
-K0-Stock-CUTLASS-NVFP4,all_e2m1,NOT_RUN,,,SM120 GPU unavailable
-K1-Patched-Fixed-E0M3,all_e0m3,NOT_RUN,,,SM120 GPU unavailable
-K2-OneSided-WeightAdaptive-KTile,alternating_type_map,NOT_RUN,,,SM120 GPU unavailable
-K3-OneSided-WeightAdaptive-CTA,random_type_map,NOT_RUN,,,SM120 GPU unavailable
-K6-Per-MMA-Branch-BadBaseline,model_shapes,NOT_RUN,,,SM120 GPU unavailable
-K7-SoftwareDecode-E0M3-to-BF16-GEMM,model_shapes,NOT_RUN,,,Native comparison blocked before kernel phase
