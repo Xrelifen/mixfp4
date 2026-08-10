@@ -40,11 +40,12 @@ source .venv/bin/activate
 python -m pip install -U pip
 ```
 
-Install base dependencies used in this repo:
+Install dependencies:
 
 ```bash
-pip install -U pytest
+pip install -r requirements.txt
 ```
+This `requirements.txt` is a single full dependency list for the codebase, including both LLM and diffusion scripts.
 
 Some subprojects provide their own dependencies in their respective directories; install those when working in that subproject.
 
@@ -89,4 +90,3 @@ cd -
 git add upstreams/fouroversix
 git commit -m "chore: bump upstreams/fouroversix"
 ```
-

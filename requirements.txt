@@ -1,0 +1,19 @@
+# Core dependencies
+numpy>=1.24
+pandas>=2.0
+torch
+transformers>=4.30
+datasets>=2.14
+huggingface-hub>=0.20
+pyyaml>=6.0
+pytest>=8.0
+
+# Image, diffusion and metric dependencies (included in the single requirements file)
+Pillow>=10.0
+matplotlib>=3.8
+scikit-image>=0.22
+diffusers>=0.27
+openai-clip>=1.0
+ImageReward>=1.5
+lpips>=0.1.4
+cleanfid>=1.3
